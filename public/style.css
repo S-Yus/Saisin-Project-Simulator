@@ -194,3 +194,55 @@ svg.spark{width:64px;height:24px;display:block;margin-left:auto}
 nav#tabs a{display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 2px 8px;font-size:.72rem}
 nav#tabs a svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 @media (prefers-reduced-motion:reduce){.stamp,.delta,#coach .ring{animation:none}.btn,.tb,.chip{transition:none}}
+
+/* ---- 0.6: 1画面に収める ---- */
+main{padding-top:4px}
+.home{display:flex;flex-direction:column;padding-top:12px}
+.home .figure{font-size:2.9rem}
+.home svg.chart.home{height:110px;margin-top:8px}
+.mini{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:.86rem;color:var(--sub);margin-top:10px;font-variant-numeric:tabular-nums}
+.mini b{color:var(--ink);font-size:1rem}.mini a{white-space:nowrap;font-weight:700;text-decoration:none}
+.evline{appearance:none;display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;margin-top:10px;padding:10px 12px;border:1px solid var(--rule);border-left:4px solid var(--pri);border-radius:2px 6px 6px 2px;background:var(--surface);font:inherit;font-size:.84rem;color:var(--ink);text-align:left;cursor:pointer}
+.evline span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.evline b{flex:0 0 auto;color:var(--pri);font-size:.78rem}
+.evline.stop{border-left-color:#e0a100;background:var(--warnbg)}
+.act{margin-top:14px}
+.hint{margin:0 0 2px;font-weight:700;font-size:.95rem}
+.act .timebtns{margin-top:8px}
+.btn.big{width:100%;min-height:64px;font-size:1.1rem}
+.resultnote{margin-top:18px;border-top:1px solid var(--rule);padding-top:10px}
+h1.tight{margin:10px 0 4px}
+.rows.compact .row{padding:9px 0}
+.one{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rows.compact .seal{width:34px;height:34px;font-size:.95rem}
+.rows.compact svg.spark{width:56px;height:20px}
+svg.chart{height:110px}
+/* 注文は全画面のシートで（下へ伸ばさない） */
+.sheet{position:fixed;inset:0;z-index:7;background:var(--paper);overflow:auto;padding:14px 20px 28px}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:640px;margin:0 auto 4px;border-bottom:1px solid var(--rule-strong);padding-bottom:6px}
+.sheet-h b{font-family:var(--serif);font-size:1.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet #orderpanel{max-width:640px;margin:0 auto}
+.sheet .card{border:0;background:transparent;padding:8px 0;margin:0}
+body.sheet-open{overflow:hidden}
+/* 質問の画面も1画面に収める */
+.wiz{min-height:calc(100dvh - 200px);padding-top:4px}
+.wiz h1{font-size:1.35rem;margin:10px 0 6px}
+.prog{margin:6px 0 14px}
+.choices{grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.choices .chip{min-height:50px;padding:10px 12px;text-align:center}
+.wiz .chip{padding:8px 12px;min-height:44px}
+.wiz .foot{padding-top:12px}
+.wiz .stack{gap:8px}
+.wiz label.sub{margin-top:6px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.rows.compact{margin-top:6px;border-top:0}
+.rows.compact .row{padding:6px 0;line-height:1.4}
+.rows.compact .nm{line-height:1.4}
+.namehead h1{font-size:1.3rem}
+.figure.md{font-size:1.7rem}
+.home svg.chart.home{height:86px}
+.home{padding-top:8px}
+.rows.compact .row{padding:5px 0}
+.calc1{margin:6px 0;padding:8px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font-size:.92rem;font-variant-numeric:tabular-nums}
+.calc1 b{font-family:var(--serif);font-size:1.1rem}
+.wiz p{margin:6px 0}.wiz .foot p{margin:2px 0}
+.wiz .fine{margin:4px 0}
