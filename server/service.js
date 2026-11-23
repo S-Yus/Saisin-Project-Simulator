@@ -53,10 +53,22 @@ function publicEvent(db, code, nowMs) {
   const ev = db.prepare('SELECT * FROM events WHERE join_code=?').get(code);
   if (!ev) throw new HttpError(404, '開催回が見つかりません');
   const st = eventStatus(db, ev, nowMs);
-  return { name: ev.name, status: st, status_ja: STATUS_JA[st], starts_at: ev.starts_at, ends_at: ev.ends_at, server_now: iso(nowMs), joinable: st === 'open', data_ready: !!ev.dataset_id, data: dataInfo(db, ev), retention_hours: ev.retention_hours, disclaimers: cfg.DISCLAIMERS, env: cfg.ENV };
+  return { name: ev.name, status: st, status_ja: STATUS_JA[st], starts_at: ev.starts_at, ends_at: ev.ends_at, server_now: iso(nowMs), joinable: st === 'open', funds: { defaults: { initial_cash: ev.initial_cash, monthly_deposit: ev.monthly_deposit }, limits: cfg.FUNDS }, data_ready: !!ev.dataset_id, data: dataInfo(db, ev), retention_hours: ev.retention_hours, disclaimers: cfg.DISCLAIMERS, env: cfg.ENV };
 }
 
-function join(db, code, nowMs) {
+// 参加者が選ぶ資金条件の検証。値はサーバーが範囲・単位を確認し、口座には2つの金額だけを保存する（質問への回答そのものは受け取らない）
+function parseFunds(ev, b) {
+  if (!b || (b.initial_cash === undefined && b.monthly_deposit === undefined)) return null; // 既定値を使う
+  const L = cfg.FUNDS; const ic = b.initial_cash ?? ev.initial_cash, md = b.monthly_deposit ?? ev.monthly_deposit;
+  const ok = (v, max) => Number.isSafeInteger(v) && v >= 0 && v <= max && v % L.step === 0;
+  if (!ok(ic, L.initial_max)) throw new HttpError(422, `最初に用意する金額は 0〜${L.initial_max.toLocaleString('ja-JP')}円、${L.step.toLocaleString('ja-JP')}円単位で指定してください`);
+  if (!ok(md, L.monthly_max)) throw new HttpError(422, `毎月の金額は 0〜${L.monthly_max.toLocaleString('ja-JP')}円、${L.step.toLocaleString('ja-JP')}円単位で指定してください`);
+  if (ic === 0 && md === 0) throw new HttpError(422, '最初の金額と毎月の金額のどちらかは1,000円以上にしてください');
+  return { initial_cash: ic, monthly_deposit: md };
+}
+const fundsOf = (ev, acc) => ({ initial_cash: acc.initial_cash ?? ev.initial_cash, monthly_deposit: acc.monthly_deposit ?? ev.monthly_deposit });
+
+function join(db, code, nowMs, body) {
   const ev = db.prepare('SELECT * FROM events WHERE join_code=?').get(code);
   if (!ev) throw new HttpError(404, '開催回が見つかりません');
   return tx(db, () => {
@@ -67,7 +79,7 @@ function join(db, code, nowMs) {
     const ds = loadDataset(db, ev.dataset_id);
     const token = crypto.randomBytes(32).toString('hex'); const pid = 'p_' + crypto.randomBytes(8).toString('hex');
     db.prepare('INSERT INTO participants VALUES(?,?,?,?)').run(pid, ev.id, sha(token), iso(nowMs));
-    E.createAccount(db, pid, ev, ds, 1, iso(nowMs));
+    E.createAccount(db, pid, ev, ds, 1, iso(nowMs), parseFunds(ev, body));
     return { token };
   });
 }
@@ -131,11 +143,11 @@ function me(db, ctx, nowMs) {
     .map((x) => ({ ...x, pct_bp: v.total > 0 ? Math.round((x.value * 10000) / v.total) : 0 }));
   return {
     server_now: iso(nowMs),
-    event: { name: ev.name, status: st, status_ja: STATUS_JA[st], ends_at: ev.ends_at, retention_hours: ev.retention_hours, env: cfg.ENV, data: dataInfo(db, ev), provisional: JSON.parse(ev.provisional_json), initial_cash: ev.initial_cash, monthly_deposit: ev.monthly_deposit, period: { start: E.startDate(ds, ev), end: fin }, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION },
+    event: { name: ev.name, status: st, status_ja: STATUS_JA[st], ends_at: ev.ends_at, retention_hours: ev.retention_hours, env: cfg.ENV, data: dataInfo(db, ev), provisional: JSON.parse(ev.provisional_json), ...fundsOf(ev, acc), funds_limits: cfg.FUNDS, period: { start: E.startDate(ds, ev), end: fin }, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION },
     account: { attempt: acc.attempt, status: acc.status, sim_date: acc.sim_date, final_date: fin, version: acc.version },
     assets: { ...v, holdings: v.holdings.map((h) => ({ ...h, name: nm(h.instrument_id), type: ds.instruments.get(h.instrument_id).type })) },
     allocation, series, news: news.slice(0, 20), orders, plans, receivables: recv,
-    next_deposit_date: ev.monthly_deposit > 0 && acc.sim_date < fin ? nextMonthStart(ds, acc.sim_date) : null,
+    next_deposit_date: fundsOf(ev, acc).monthly_deposit > 0 && acc.sim_date < fin ? nextMonthStart(ds, acc.sim_date) : null,
     disclaimers: cfg.DISCLAIMERS,
   };
 }
@@ -188,9 +200,10 @@ function compare(db, ctx) {
     const own = E.valuation(db, a, ds);
     const fees = db.prepare("SELECT COALESCE(-SUM(amount),0) s FROM ledger WHERE account_id=? AND type='fee'").get(a.id).s;
     const trades = db.prepare("SELECT COUNT(*) c FROM orders WHERE account_id=? AND status='filled'").get(a.id).c;
-    return { attempt: a.attempt, status: a.status, sim_date: a.sim_date, at_common: s, own: { total: own.total, deposits: own.deposits, pnl: own.pnl }, fees, trades, holdings: own.holdings.map((h) => ({ name: ds.instruments.get(h.instrument_id).name, value: h.value })), series: db.prepare('SELECT date,total FROM snapshots WHERE account_id=? AND date<=? ORDER BY date').all(a.id, common) };
+    return { attempt: a.attempt, status: a.status, sim_date: a.sim_date, conditions: fundsOf(ev, a), at_common: s, own: { total: own.total, deposits: own.deposits, pnl: own.pnl }, fees, trades, holdings: own.holdings.map((h) => ({ name: ds.instruments.get(h.instrument_id).name, value: h.value })), series: db.prepare('SELECT date,total FROM snapshots WHERE account_id=? AND date<=? ORDER BY date').all(a.id, common) };
   });
-  return { common_date: common, rows, conditions: { initial_cash: ev.initial_cash, monthly_deposit: ev.monthly_deposit }, note: '同じ入金条件での比較です。結果に優劣の順位は付けません。' };
+  const same = rows.every((r) => r.conditions.initial_cash === rows[0].conditions.initial_cash && r.conditions.monthly_deposit === rows[0].conditions.monthly_deposit);
+  return { common_date: common, rows, same_conditions: same, conditions: rows[rows.length - 1].conditions, note: same ? '同じ資金条件での比較です。結果に優劣の順位は付けません。' : '資金条件が異なる試行が含まれます（各試行の条件を表示しています）。結果に優劣の順位は付けません。' };
 }
 
 // 通信結果が不明な操作の照会: 同じ request_id が受け付けられていれば、その結果を返す（本人の全試行が対象）
@@ -229,8 +242,10 @@ function opRestart(db, b) {
     if (n >= 10) throw new HttpError(422, '試行は10回までです');
     db.prepare("UPDATE accounts SET status='saved', version=version+1 WHERE id=?").run(ctx.acc.id); // 過去の結果は閲覧専用
     db.prepare("UPDATE orders SET status='lapsed', closed_date=?, reason='やり直しのため保存', reserve=0 WHERE account_id=? AND status='accepted'").run(ctx.acc.sim_date, ctx.acc.id);
-    const a = E.createAccount(db, ctx.p.id, ctx.ev, ctx.ds, ctx.acc.attempt + 1, iso(ctx.nowMs));
-    return { ok: true, attempt: a.attempt, message: `同じ初期条件で ${a.attempt} 回目を開始しました（前回の結果は閲覧専用で残ります）` };
+    // 既定は前回と同じ資金条件。金額を指定した場合だけ条件を変える（比較画面には各試行の条件が出る）
+    const changed = parseFunds(ctx.ev, b); const funds = changed || fundsOf(ctx.ev, ctx.acc);
+    const a = E.createAccount(db, ctx.p.id, ctx.ev, ctx.ds, ctx.acc.attempt + 1, iso(ctx.nowMs), funds);
+    return { ok: true, attempt: a.attempt, message: `${changed ? '資金条件を変えて' : '同じ資金条件で'} ${a.attempt} 回目を開始しました（前回の結果は閲覧専用で残ります）` };
   });
 }
 

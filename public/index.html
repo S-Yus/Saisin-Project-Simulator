@@ -4,34 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f7f5ef">
 <title>資産形成シミュレーター（説明会用）</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div id="envbanner" hidden></div>
 <header id="top" hidden>
-  <div class="hdr-main">
+  <div class="hdr">
     <div>
-      <div class="lbl">シミュレーション上の日付 <button class="q" data-term="simdate" aria-label="説明">?</button></div>
+      <div class="lbl">シミュレーション上の日付 <button class="q" data-term="simdate" aria-label="シミュレーション上の日付の説明">?</button></div>
       <div id="simdate" class="simdate">-</div>
     </div>
-    <div class="hdr-right">
-      <div class="lbl">説明会の終了予定（実際の時刻）</div>
-      <div id="realend" class="realend">-</div>
-      <button id="btn-notice" class="linkbtn">ご利用上の注意</button>
-    </div>
+    <button id="btn-notice" class="linkbtn">ご利用上の注意</button>
   </div>
 </header>
 <div id="statusbar" role="status" hidden></div>
 <main id="view" tabindex="-1"></main>
 <nav id="tabs" hidden aria-label="メニュー">
   <a href="#/home" data-t="home">ホーム</a>
-  <a href="#/market" data-t="market">投資対象</a>
-  <a href="#/orders" data-t="orders">注文</a>
-  <a href="#/history" data-t="history">履歴</a>
-  <a href="#/more" data-t="more">その他</a>
+  <a href="#/market" data-t="market">さがす</a>
+  <a href="#/orders" data-t="orders">記録</a>
+  <a href="#/more" data-t="more">メニュー</a>
 </nav>
-<dialog id="dlg"><div id="dlgbody"></div><form method="dialog"><button class="btn">閉じる</button></form></dialog>
+<dialog id="dlg"><div id="dlgbody"></div><form method="dialog"><button class="btn quiet sm" style="margin-top:12px">閉じる</button></form></dialog>
 <div id="toasts" aria-live="polite"></div>
 <script src="/app.js"></script>
 </body>

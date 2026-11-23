@@ -1,4 +1,4 @@
-# API仕様（アプリ 0.3.0）
+# API仕様（アプリ 0.4.0）
 
 すべて JSON。応答には `Cache-Control: no-store` と CSP 等のヘッダーが付く。日付は `YYYY-MM-DD`（シミュレーション上の日付）、日時は ISO 8601（実際の時刻・UTC）。金額は円の整数、価格は 1/1000 円の整数（`*_milli`）。
 
@@ -41,13 +41,13 @@
 ## 2. 参加者API
 | メソッド・経路 | 内容 |
 |---|---|
-| `GET /api/event?code=` | 開催回の公開情報: `name, status, status_ja, starts_at, ends_at, server_now, joinable, data_ready, data{kind, period{start,end}, pending[]（未確定のまま動いている項目）, license_confirmed, sources[]}, retention_hours, disclaimers[], env`。認証不要 |
-| `POST /api/join` `{code}` | 参加。開催中のみ。`{token}` を返す。定員超過は 429 |
+| `GET /api/event?code=` | 開催回の公開情報: `name, status, status_ja, starts_at, ends_at, server_now, joinable, funds{defaults{initial_cash, monthly_deposit}, limits{initial_max, monthly_max, step}}, data_ready, data{kind, period{start,end}, pending[]（未確定のまま動いている項目）, license_confirmed, sources[]}, retention_hours, disclaimers[], env`。認証不要 |
+| `POST /api/join` `{code, initial_cash?, monthly_deposit?}` | 参加。開催中のみ。`{token}` を返す。定員超過は 429。金額は参加者が選んだ資金条件（円・整数、最初 0〜1,000万・毎月 0〜30万・1,000円単位・両方0は不可。範囲外は 422）。省略時は開催回の既定値。**質問への回答（学年・収入・支出）は送らない** |
 | `GET /api/me` | 口座の全体像（下記） |
 | `GET /api/instruments?q=&category=` | 一覧: `items[{id,type,name,category,description,price_milli,price_date,stale,prev_close_milli,qty,value}], categories[]` |
 | `GET /api/instruments/{id}` | 詳細: 上記＋`series[[date, close_milli]]`（日付以前のみ）, `terms`, `source`, `holding`, `sellable`, `plan`, `available`, `open_orders[]` |
 | `GET /api/history?attempt=` | `orders[], ledger[], plans[]`。`attempt` は本人の過去の試行（閲覧専用） |
-| `GET /api/compare` | 本人の試行の比較（共通の日付時点。順位なし） |
+| `GET /api/compare` | 本人の試行の比較（共通の日付時点。順位なし）。各試行の `conditions{initial_cash, monthly_deposit}` と `same_conditions` を返す |
 | `GET /api/requests/{request_id}` | `{found: true, response}` または `{found: false, message}` |
 | `POST /api/orders/preview` | 注文の事前検証（保存しない）: `{ok, errors[], info}` |
 | `POST /api/orders` | 注文。`{request_id, expected_sim_date?, instrument_id, side: buy/sell, amount?（投信の買い・円）, qty?（売り・株式の買い）, sell_all?}` → `{ok, order_id, info, message}` |
@@ -55,13 +55,13 @@
 | `POST /api/advance` | 時間進行。`{request_id, expected_sim_date?, mode: day/month}` → `{ok, days, events[{date,type,text}], stop{reason,message,next}}` |
 | `POST /api/plans` | 積立の設定。`{request_id, instrument_id, amount, day_of_month(1〜28)}` |
 | `POST /api/plans/{id}` | 積立の変更。`{request_id, action: amount/pause/resume/cancel, amount?}` |
-| `POST /api/restart` | 結果を保存して同じ条件でやり直す（10回まで） |
+| `POST /api/restart` `{request_id, initial_cash?, monthly_deposit?}` | 結果を保存してやり直す（10回まで）。金額を省略すれば同じ条件、指定すれば条件を変える |
 
 ### `GET /api/me` の主な項目
 | 項目 | 内容 |
 |---|---|
 | `server_now` | サーバーの実時刻 |
-| `event` | `name, status, ends_at, retention_hours, env, data{kind, period, license_confirmed, sources[]}, provisional, initial_cash, monthly_deposit, period{start,end}, app_version, calc_spec_version` |
+| `event` | `name, status, ends_at, retention_hours, env, data{kind, period, license_confirmed, sources[]}, provisional, initial_cash, monthly_deposit（この口座の資金条件）, funds_limits{initial_max, monthly_max, step}, period{start,end}, app_version, calc_spec_version` |
 | `account` | `attempt, status(active/finished/saved), sim_date, final_date, version` |
 | `assets` | `cash, reserved, payable_purchase, available, holdings_value, receivable_sale, receivable_dividend, total, deposits, pnl, holdings[{instrument_id,name,type,qty,unsettled_qty,sellable_qty,cost,price_milli,price_date,stale,value,pnl}]` |
 | `allocation` | 分類別の評価額と現金等: `[{label, value, pct_bp}]`（合計＝総資産） |

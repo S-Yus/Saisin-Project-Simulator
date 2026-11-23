@@ -24,8 +24,8 @@ module.exports = {
   // 許諾未確認・条件仮設定・確認未記録のままでも固定・公開できる（画面に「確認用環境」と未確定事項を常時表示）。
   // 本番（prod）だけが、許諾確認済み・条件確定・仮設定なし・動作確認の記録を公開の条件にする。
   REVIEW: ENV === 'staging',
-  APP_VERSION: '0.3.0',
-  CALC_SPEC_VERSION: '1.2',          // docs/SPEC.md の版。計算仕様を変えたら必ず上げる
+  APP_VERSION: '0.4.0',
+  CALC_SPEC_VERSION: '1.3',          // docs/SPEC.md の版。計算仕様を変えたら必ず上げる
   CODE_HASH: codeHash(),
   PORT: Number(process.env.PORT || 8080),
   HOST: process.env.HOST || '127.0.0.1', // 既定はローカルのみ待受。公開はリバースプロキシ経由
@@ -37,6 +37,8 @@ module.exports = {
   ADMIN_LOCAL_ONLY: process.env.ADMIN_LOCAL_ONLY === '1',
   TRUST_PROXY: process.env.TRUST_PROXY === '1',       // 前段プロキシの X-Forwarded-For を信頼するか
   JOIN_RATE_PER_MIN: Number(process.env.JOIN_RATE_PER_MIN || 600), // 1送信元IPあたり/分（会場Wi-FiのNATを考慮）
+  // 参加者が自分で選べる資金条件の範囲（円）。開催回の初期資金・毎月の追加資金は、選ばなかった場合の既定値になる
+  FUNDS: { initial_max: 10000000, monthly_max: 300000, step: 1000 },
   DISCLAIMERS: [
     '本シミュレーションのいかなる内容も将来の結果を予測し保証するものではありません',
     '本シミュレーションを利用することで生じるいかなる損害についても当金庫が責任を負うものではありません。実際の資産運用や投資判断に当たっては、必ずご自身の責任において最終判断してください。',

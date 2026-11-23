@@ -368,3 +368,23 @@ test('管理画面のローカル限定: プロキシ・トンネル経由の要
     assert.equal((await get('/api/event?code=' + env.ev.join_code, via)).status, 200);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+test('参加者ごとの資金条件: 範囲・単位をサーバーが検証し、初期資金と毎月の入金に反映。やり直しは同条件が既定で、変更もできる', () => {
+  const env = setup(bundle36(), { initial_cash: 1000000, monthly_deposit: 30000 }); const a = api(env);
+  const J = (b) => S.join(env.db, env.ev.join_code, env.now, { code: env.ev.join_code, ...b }).token;
+  for (const bad of [{ initial_cash: -1000 }, { initial_cash: 1500 }, { initial_cash: 10001000 }, { monthly_deposit: 301000 }, { monthly_deposit: 2500 }, { initial_cash: 0, monthly_deposit: 0 }, { initial_cash: '100000' }, { initial_cash: 1e3 + 0.5 }]) assert.throws(() => J(bad), /円/, JSON.stringify(bad));
+  assert.equal(a.me(J({})).assets.cash, 1000000, '指定なしは開催回の既定値');
+  const tok = J({ initial_cash: 50000, monthly_deposit: 5000 });
+  let me = a.me(tok); assert.equal(me.assets.cash, 50000); assert.equal(me.assets.deposits, 50000); assert.equal(me.event.initial_cash, 50000); assert.equal(me.event.monthly_deposit, 5000);
+  a.advance(tok, 'month'); a.advance(tok, 'month'); me = a.me(tok);
+  assert.equal(me.assets.cash, 60000); assert.equal(me.assets.deposits, 60000);
+  const zero = J({ initial_cash: 0, monthly_deposit: 10000 }); assert.equal(a.me(zero).assets.total, 0); a.advance(zero, 'month'); assert.equal(a.me(zero).assets.cash, 10000);
+  const none = J({ initial_cash: 200000, monthly_deposit: 0 }); a.advance(none, 'month'); assert.equal(a.me(none).assets.cash, 200000); assert.equal(a.me(none).next_deposit_date, null);
+  // やり直し: 既定は同じ条件、指定すれば変更。比較には各試行の条件が出る
+  a.restart(tok); assert.equal(a.me(tok).assets.cash, 50000); assert.equal(a.compare(tok).same_conditions, true);
+  S.opRestart(env.db, { request_id: 'restart-change-0001', initial_cash: 300000, monthly_deposit: 0 })(env.now, tok);
+  assert.equal(a.me(tok).assets.cash, 300000); const c = a.compare(tok); assert.equal(c.same_conditions, false); assert.deepEqual(c.rows.map((r) => r.conditions.initial_cash), [50000, 50000, 300000]);
+  assert.throws(() => S.opRestart(env.db, { request_id: 'restart-change-0002', initial_cash: 999 })(env.now, tok), /円/);
+  // 口座に保存されるのは2つの金額だけ（質問の回答を保存する列はない）
+  assert.deepEqual(env.db.prepare('PRAGMA table_info(participants)').all().map((r) => r.name), ['id', 'event_id', 'token_hash', 'created_at']);
+});

@@ -73,12 +73,14 @@ function snapshot(db, acc, ds) {
   return v;
 }
 
-function createAccount(db, participantId, ev, ds, attempt, now) {
+// funds: 参加者が選んだ資金条件 { initial_cash, monthly_deposit }（検証済みの値）。省略時は開催回の既定値
+function createAccount(db, participantId, ev, ds, attempt, now, funds) {
   const d0 = startDate(ds, ev);
-  const r = db.prepare('INSERT INTO accounts(participant_id,event_id,attempt,status,sim_date,cash,deposits,news_seen_upto,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
-    .run(participantId, ev.id, attempt, 'active', d0, ev.initial_cash, ev.initial_cash, d0, now);
+  const ic = funds ? funds.initial_cash : ev.initial_cash, md = funds ? funds.monthly_deposit : ev.monthly_deposit;
+  const r = db.prepare('INSERT INTO accounts(participant_id,event_id,attempt,status,sim_date,cash,deposits,news_seen_upto,created_at,initial_cash,monthly_deposit) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+    .run(participantId, ev.id, attempt, 'active', d0, ic, ic, d0, now, ic, md);
   const acc = getAcc(db, r.lastInsertRowid);
-  db.prepare('INSERT INTO ledger(account_id,date,type,amount,note,key) VALUES(?,?,?,?,?,?)').run(acc.id, d0, 'deposit', ev.initial_cash, '初期資金', 'deposit:initial');
+  db.prepare('INSERT INTO ledger(account_id,date,type,amount,note,key) VALUES(?,?,?,?,?,?)').run(acc.id, d0, 'deposit', ic, '初期資金', 'deposit:initial');
   snapshot(db, acc, ds);
   return acc;
 }
@@ -205,10 +207,11 @@ function processDay(db, accId, ds, ev, out) {
   const instName = (id) => ds.instruments.get(id)?.name || id;
 
   // 0) 月初の追加資金
-  if (ymOf(d) !== ymOf(prev) && ev.monthly_deposit > 0) {
-    cash += ev.monthly_deposit; deposits += ev.monthly_deposit;
-    ledger(db, acc, d, 'deposit', ev.monthly_deposit, `deposit:${ymOf(d)}`, null, null, '毎月の追加資金');
-    note('deposit', `毎月の追加資金 ${jpy(ev.monthly_deposit)}円 が入金されました`);
+  const monthly = acc.monthly_deposit ?? ev.monthly_deposit; // 参加者が選んだ額（未設定なら開催回の既定値）
+  if (ymOf(d) !== ymOf(prev) && monthly > 0) {
+    cash += monthly; deposits += monthly;
+    ledger(db, acc, d, 'deposit', monthly, `deposit:${ymOf(d)}`, null, null, '毎月の追加資金');
+    note('deposit', `毎月の追加資金 ${jpy(monthly)}円 が入金されました`);
   }
   db.prepare('UPDATE accounts SET cash=?, deposits=?, sim_date=? WHERE id=?').run(cash, deposits, d, acc.id);
   acc = getAcc(db, accId);

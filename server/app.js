@@ -47,7 +47,7 @@ function createApp(db, opts = {}) {
     if (route === 'GET /api/event') return S.publicEvent(db, url.searchParams.get('code') || '', t);
     if (route === 'POST /api/join') {
       if (limit(joins, clientIp(req), opts.joinRatePerMin || cfg.JOIN_RATE_PER_MIN, 60000)) throw new HttpError(429, '短時間に参加操作が集中しています。少し待ってください');
-      return S.join(db, String(body.code || ''), t);
+      return S.join(db, String(body.code || ''), t, body);
     }
     if (m === 'GET') {
       const ctx = S.auth(db, token, t, { write: false }); const q = url.searchParams;

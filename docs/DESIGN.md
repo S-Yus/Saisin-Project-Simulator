@@ -1,4 +1,4 @@
-# 基本設計・データ設計（アプリ 0.3.0）
+# 基本設計・データ設計（アプリ 0.4.0）
 
 計算・約定・端数の詳細は [SPEC.md](SPEC.md)、APIは [API.md](API.md)、運用は [OPERATIONS.md](OPERATIONS.md)。
 
@@ -21,20 +21,20 @@ flowchart LR
 ### 参加者（スマートフォン縦画面優先）
 | 画面 | 主な内容 |
 |---|---|
-| 開始 | 開催名、対象期間と「過去の実データに基づく取引体験」、開催時間、状態（開催中・開始前・一時停止・終了・準備中）、必須文言、同意、参加 |
-| ホーム | シミュレーション上の日付（実際の終了予定時刻と区別して表示）、総資産、運用損益（税引前）、買付可能額・現金残高・拘束・受渡待ち、入金累計、時間進行、進めた間の出来事（種類ごとにまとめ）、資産配分、資産推移、保有、最新イベント。最終日は結果 |
+| 開始（質問6つ） | 開催名、対象期間と「過去の実データに基づく取引体験」、開催時間、状態 → 1画面1問: 学年／毎月の収入／毎月の支出／毎月投資に回す金額（収入−支出の差し引きを表示）／最初に用意する金額 → 確認（必須文言・同意）→ 参加。収入・支出までは「とばす」ことができる |
+| 使い方（4ステップ） | えらぶ → 注文する → 時間を進める → ふり返る。参加直後に1回表示し、メニューから再表示できる |
+| ホーム | 総資産・運用損益（税引前）・使えるお金・入金した合計 → **次にやること**（4段階のどこにいるかと、押すべきボタン1〜3個）→ 進めた間の出来事（種類ごとにまとめ）→ 持っている投資対象 → 総資産の動き。現金の内訳・受渡予定・資産配分・できごとは折りたたみ。最終日は結果 |
 | 投資対象 | 分類・正式名称・現在までの価格、検索、分類絞り込み（評価ラベルなし・登録順） |
 | 商品詳細 | 説明、シミュレーション日付までの価格推移、保有、取引条件（仮設定の表示）、出典、**買う・売る・積立** |
 | 注文 | 入力 → 内容確認 → 受付結果。使える資金、数量・金額、費用、約定予定日、受渡予定日。通信結果が不明なときは「受付状況を確認」 |
-| 注文一覧 | 受付済み（取消）、積立、成立・取消・失効 |
-| 履歴 | お金・数量の動き、注文の履歴、過去の試行（閲覧専用）、試行の比較 |
-| その他 | 注意事項、再現していること、データの出典、用語、設定、やり直し、データの扱い |
+| 記録 | 「注文と積立」（受付済み・取消、積立、成立・取消・失効）と「お金の動き」を切り替え。過去の試行（閲覧専用）、試行の比較 |
+| メニュー | いまの条件、やり直し（金額の変更可）、使い方、注意事項、再現していること・出典、用語、データの扱い、説明会の終了予定 |
 | 終了 | 終了案内と必須文言のみ（トークンを端末から消去） |
 
 ```mermaid
 flowchart TD
   QR[QRコード] --> START[開始画面]
-  START -- 同意して参加 --> HOME[ホーム]
+  START -- 質問に答えて金額を決め、同意して参加 --> GUIDE[使い方 4ステップ] --> HOME[ホーム]
   HOME <--> MARKET[投資対象] --> DETAIL[商品詳細]
   DETAIL --> ORDER[注文: 入力→確認→結果]
   DETAIL --> PLAN[積立: 入力→確認→結果]
@@ -125,7 +125,7 @@ erDiagram
 | テーブル | 主な列 | 制約 |
 |---|---|---|
 | participants | id（匿名の乱数）, event_id, token_hash（トークン自体は保存しない）, created_at | token_hash UNIQUE |
-| accounts | id, participant_id, event_id, attempt, status(active/finished/saved), sim_date, cash, deposits, version, news_seen_upto | UNIQUE(participant_id, attempt) |
+| accounts | id, participant_id, event_id, attempt, status(active/finished/saved), sim_date, cash, deposits, version, news_seen_upto, initial_cash, monthly_deposit（参加者が選んだ資金条件。NULL は開催回の既定値） | UNIQUE(participant_id, attempt) |
 | holdings | account_id, instrument_id, qty, cost | PK(account_id, instrument_id) |
 | orders | id, account_id, instrument_id, kind, side, qty, amount, sell_all, status(accepted/filled/cancelled/lapsed), placed_date, exec_date, settle_date, reserve, origin(manual/plan), plan_id, closed_date, reason, price_milli, gross, fee, units | status は CHECK |
 | receivables | id, account_id, kind(purchase/sale/dividend/split_fraction), instrument_id, amount, qty, due_date, status(pending/paid), ref | |

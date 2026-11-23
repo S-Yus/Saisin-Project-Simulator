@@ -1,14 +1,17 @@
 'use strict';
 // 参加者画面。計算は一切行わず、サーバーの結果を表示するだけ。残高・日付を送信しない（expected_sim_date のみ送る）。
+// 開始時の質問（学年・収入・支出）への回答はこの端末の中だけで使い、サーバーへ送るのは「最初の金額」「毎月の金額」の2つだけ。
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const yen = (n) => (n == null ? '-' : Number(n).toLocaleString('ja-JP') + '円');
-const signYen = (n) => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toLocaleString('ja-JP') + '円';
-const plLabel = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : ''}">${n > 0 ? '▲ 利益 ' : n < 0 ? '▼ 損失 ' : '― 損益なし '}${signYen(n)}</span>`;
+const num = (n) => Number(n).toLocaleString('ja-JP');
+const yen = (n) => (n == null ? '-' : num(n) + '円');
+const signYen = (n) => (n > 0 ? '+' : n < 0 ? '−' : '±') + num(Math.abs(n)) + '円';
+const plLabel = (n) => `<span class="pl ${n > 0 ? 'pos' : n < 0 ? 'neg' : ''}">${n > 0 ? '▲ 利益 ' : n < 0 ? '▼ 損失 ' : '― 損益なし '}${signYen(n)}</span>`;
 const milli = (m) => (m == null ? '-' : (m / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 3 }));
 const jdate = (d) => (d ? `${d.slice(0, 4)}年${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日` : '-');
-const TOKEN_KEY = 'nisa_sim_token';
-const store = { get: () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }, set: (v) => { try { localStorage.setItem(TOKEN_KEY, v); } catch { /* 保存できない環境では毎回参加し直し */ } }, clear: () => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ } } };
+const TOKEN_KEY = 'nisa_sim_token', PROFILE_KEY = 'nisa_sim_profile', GUIDE_KEY = 'nisa_sim_guide';
+const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* 保存できない環境では毎回やり直し */ } }, del: (k) => { try { localStorage.removeItem(k); } catch { /* noop */ } } };
+const store = { get: () => ls.get(TOKEN_KEY), set: (v) => ls.set(TOKEN_KEY, v), clear: () => { ls.del(TOKEN_KEY); ls.del(PROFILE_KEY); ls.del(GUIDE_KEY); } };
 const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 
 const DISC = [
@@ -26,7 +29,8 @@ const TERMS = {
   market: ['成行注文（なりゆきちゅうもん）', '値段を指定せず、市場の価格で売買する注文です。このシミュレーターでは、日付の終わりに注文し、次の営業日の始値（寄付き）で約定します。注文時点では価格が分かりません。'],
   fill: ['約定（やくじょう）', '注文が成立して売買が決まることです。'],
   settle: ['受渡（うけわたし）', '約定の数日後に、代金と株式・口数のやり取りが実際に行われることです。買った株式・口数は受渡日まで売れず、買付代金は受渡日に現金から支払います。売却代金は受渡日まで「未受渡」で、新しい購入には使えません（どちらも総資産には反映済みです）。'],
-  buying: ['買付可能額', '新しい注文に使える金額です。現金残高から、受付中の注文のために確保している金額と、受渡日を待っている買付代金を差し引いたものです。売却代金は受渡日に現金になるまで含みません。'],
+  buying: ['使えるお金（買付可能額）', '新しい注文に使える金額です。現金残高から、受付中の注文のために確保している金額と、受渡日を待っている買付代金を差し引いたものです。売却代金は受渡日に現金になるまで含みません。'],
+  total: ['総資産', '現金残高 ＋ 持っている投資対象の評価額 − 未受渡の買付代金 ＋ 未受渡の売却代金 ＋ 未収配当等。約定から受渡までの間も、資産が消えたり重複したりしません。'],
   lot: ['売買単位（単元株）', '株式・ETFは決められた数量（例: 100株）の倍数で買います。'],
   nav: ['基準価額', '投資信託の1万口あたりの値段です。毎営業日に1回決まり、注文時点では分かりません。'],
   holdback: ['信託財産留保額', '投資信託を売るときに差し引かれる費用の一種です（商品によってはゼロ）。'],
@@ -35,9 +39,10 @@ const TERMS = {
   reserve: ['確保額', '株式・ETFの成行買いでは、翌日に値上がりしても買えるよう、注文日の終値に余裕（基準とする証券会社の条件で設定）を加えた金額を注文中に確保します。始値がその範囲を超えたら成立せず失効し、確保は戻ります。成立後は実際の代金だけが受渡日まで拘束されます。'],
   pretax: ['税引前', '税金を引く前の金額です。このシミュレーターでは税金を計算しません。'],
 };
-// 確認用環境: さいしんの動作確認のための環境。未確定のまま動いている項目を常に表示する
+// 環境の帯。確認用環境では、未確定のまま動いている項目を常に表示する
 const reviewBanner = (d) => '確認用環境（動作確認用）。本番ではありません' + (d && d.pending && d.pending.length ? '。未確定: ' + d.pending.join('・') : '');
 const devBanner = (d) => (d && d.kind === 'production' ? '開発・検算環境（実データ・利用許諾は未確認）。検算専用で、参加者への提供はできません' : '開発・検算環境（架空の開発用テストデータ）。本番ではありません');
+function showEnvBanner(env, data) { const eb = $('#envbanner'); if (env === 'dev' || env === 'staging') { eb.hidden = false; eb.textContent = env === 'dev' ? devBanner(data) : reviewBanner(data); } }
 // 対象期間と「過去の実データ」の明示（架空データの開発環境ではその旨を表示）
 const periodLine = (d) => { const p = d && d.period ? `対象期間 ${jdate(d.period.start)} 〜 ${jdate(d.period.end)}` : '対象期間は未設定'; return d && d.kind === 'dev_test' ? `<b>開発用の架空データ</b>（${p}）。実際の市場データではありません。` : `<b>過去の実データに基づく取引体験</b>です（${p}）。将来の値動きを予測するものではありません。`; };
 let S = { me: null, offset: 0, auto: false, autoTimer: null, last: [], stop: null, ended: false, busy: false };
@@ -59,28 +64,27 @@ function showEnded(msg) {
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; $('#toasts').append(d); setTimeout(() => d.remove(), 5000); }
 function modal(html) { $('#dlgbody').innerHTML = html; const d = $('#dlg'); if (!d.open) d.showModal(); }
 document.addEventListener('click', (e) => {
-  const q = e.target.closest('[data-term]'); if (q) { const t = TERMS[q.dataset.term]; modal(`<h2>${esc(t[0])}</h2><p>${esc(t[1])}</p>`); }
+  const q = e.target.closest('[data-term]'); if (q) { e.preventDefault(); const t = TERMS[q.dataset.term]; modal(`<h3 style="margin-top:0">${esc(t[0])}</h3><p>${esc(t[1])}</p>`); }
 });
-$('#btn-notice').addEventListener('click', () => modal('<h2>ご利用上の注意</h2>' + discHtml()));
+$('#btn-notice').addEventListener('click', () => modal('<h3 style="margin-top:0">ご利用上の注意</h3>' + discHtml()));
 const Q = (k) => `<button class="q" data-term="${k}" aria-label="${esc(TERMS[k][0])}の説明">?</button>`;
 
 // ---------- 状態 ----------
-async function refresh() {
-  S.me = await api('GET', '/api/me'); S.offset = Date.parse(S.me.server_now) - Date.now(); renderHeader(); return S.me;
-}
+async function refresh() { S.me = await api('GET', '/api/me'); S.offset = Date.parse(S.me.server_now) - Date.now(); renderHeader(); return S.me; }
 function renderHeader() {
   const m = S.me; $('#top').hidden = false; $('#tabs').hidden = false;
   $('#simdate').textContent = jdate(m.account.sim_date);
-  const end = new Date(m.event.ends_at); $('#realend').textContent = end.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const eb = $('#envbanner'); if (m.event.env === 'dev') { eb.hidden = false; eb.textContent = devBanner(m.event.data); } else if (m.event.env === 'staging') { eb.hidden = false; eb.textContent = reviewBanner(m.event.data); }
+  showEnvBanner(m.event.env, m.event.data);
   const sb = $('#statusbar');
   if (m.event.status === 'paused') { sb.hidden = false; sb.textContent = '管理者により一時停止中です。再開まで操作できません。'; }
   else if (m.account.status === 'saved') { sb.hidden = false; sb.textContent = `これは ${m.account.attempt} 回目の記録です（閲覧専用）。`; } else sb.hidden = true;
 }
 const locked = () => S.me.event.status === 'paused' || S.me.account.status !== 'active';
+const onHome = () => location.hash.startsWith('#/home') || !location.hash;
 
 // ---------- ルーター ----------
-const routes = { home: viewHome, market: viewMarket, i: viewInstrument, orders: viewOrders, history: viewHistory, compare: viewCompare, news: viewNews, more: viewMore };
+const routes = { home: viewHome, market: viewMarket, i: viewInstrument, orders: viewRecords, history: viewRecords, compare: viewCompare, news: viewNews, more: viewMore, guide: viewGuide };
+const TAB_OF = { i: 'market', history: 'orders', compare: 'orders', news: 'home', guide: 'more' };
 async function route() {
   if (S.ended) return;
   const params = new URLSearchParams(location.search);
@@ -88,9 +92,10 @@ async function route() {
   if (!store.get()) return viewStart(params.get('code'));
   try {
     await refresh();
-    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.t === (name === 'i' ? 'market' : name === 'compare' || name === 'news' ? (name === 'compare' ? 'history' : 'home') : name || 'home')));
-    await (routes[name] || viewHome)(decodeURIComponent(arg || ''));
-    $('#view').focus({ preventScroll: true });
+    const tab = TAB_OF[name] || name || 'home';
+    document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.t === tab));
+    await (routes[name] || viewHome)(decodeURIComponent(arg || ''), name);
+    window.scrollTo(0, 0); $('#view').focus({ preventScroll: true });
   } catch (e) { if (!e.ended) $('#view').innerHTML = `<div class="msg err">${esc(e.message)}${e.unknown ? '<br>通信を確認して、画面を更新してください。' : ''}</div>`; }
 }
 window.addEventListener('hashchange', route);
@@ -98,125 +103,197 @@ window.addEventListener('hashchange', route);
 async function refreshQuiet() { try { await refresh(); } catch { /* 通信断は次回に再確認 */ } }
 setInterval(() => { if (store.get() && !S.ended && !document.hidden && !S.auto) refreshQuiet(); }, 30000); // 期限・一時停止を定期的に再確認
 
-// ---------- 開始画面 ----------
+// ---------- 開始: 質問に答えて自分の条件を決める ----------
+// 回答（学年・収入・支出）は端末内でのみ使う。サーバーへ送るのは initial_cash と monthly_deposit だけ。
+const W = { step: 0, ev: null, code: null, grade: null, income: null, expense: null, monthly: null, initial: null };
+const GRADES = ['大学1年', '大学2年', '大学3年', '大学4年', '大学院生', 'その他'];
+const WIZ_STEPS = 6;
+function startStatusHtml(ev) {
+  if (!ev.data_ready) return '<div class="msg warn"><b>データ未設定</b>のため、まだ開始できません。主催者の準備が終わるまでお待ちください。</div>';
+  const m = { open: null, not_started: ['', `開始前です。${new Date(ev.starts_at).toLocaleString('ja-JP')} 以降に参加できます（時刻はサーバー基準）。`],
+    paused: ['warn', '主催者により一時停止中です。再開までお待ちください。'], ended: ['warn', 'この説明会は終了しました。新しい参加・操作はできません。'], purged: ['warn', 'この説明会は終了し、参加データは削除済みです。'],
+    stopped: ['warn', 'この説明会は停止されています。'], not_enabled: ['', '準備中です（公開前）。'], unverified: ['', '準備中です（動作確認が完了していません）。'] }[ev.status];
+  return m ? `<div class="msg ${m[0]}">状態: <b>${esc(ev.status_ja)}</b> — ${esc(m[1])}</div>` : '';
+}
 async function viewStart(code) {
   $('#top').hidden = true; $('#tabs').hidden = true; $('#statusbar').hidden = true;
   const v = $('#view'); if (!code) { v.innerHTML = `<h1>資産形成シミュレーター</h1><div class="msg warn">会場のQRコードから開いてください。参加用の情報がありません。</div>${discHtml()}`; return; }
   let ev; try { ev = await api('GET', '/api/event?code=' + encodeURIComponent(code)); } catch (e) { v.innerHTML = `<h1>資産形成シミュレーター</h1><div class="msg err">${esc(e.message)}</div>`; return; }
-  if (ev.env === 'dev' || ev.env === 'staging') { const eb = $('#envbanner'); eb.hidden = false; eb.textContent = ev.env === 'dev' ? devBanner(ev.data) : reviewBanner(ev.data); }
-  v.innerHTML = `<h1>${esc(ev.name)}</h1>
-  <div class="card"><p>投資対象を自分で選び、購入・売却・積立を試せるシミュレーターです。氏名・メールアドレスなどは入力不要で、実際のお金・口座には接続しません。</p>
-  <div class="msg info">${periodLine(ev.data)}</div>
-  <p class="sub">開催時間: ${esc(new Date(ev.starts_at).toLocaleString('ja-JP'))} 〜 ${esc(new Date(ev.ends_at).toLocaleString('ja-JP'))}<br>終了後、新しい操作はできなくなり、参加データは終了の ${ev.retention_hours} 時間後に自動削除されます（削除には運用上の制約があります。詳しくは主催者にご確認ください）。</p>
-  ${startStatusHtml(ev)}</div>
-  <h2>必ずお読みください</h2>${discHtml()}
-  <label><input type="checkbox" id="agree" style="width:auto;min-height:0"> 上記を読み、理解しました</label>
-  <div class="btns"><button id="join" class="btn pri" disabled>${ev.joinable ? '参加する' : '現在は参加できません'}</button></div><div id="joinmsg"></div>`;
-  const j = $('#join'); const chk = $('#agree'); const upd = () => { j.disabled = !(ev.joinable && chk.checked); }; chk.addEventListener('change', upd);
-  j.addEventListener('click', async () => { j.disabled = true; try { const r = await api('POST', '/api/join', { code }); store.set(r.token); history.replaceState(null, '', '/#/home'); route(); } catch (e) { $('#joinmsg').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; upd(); } });
+  showEnvBanner(ev.env, ev.data);
+  W.ev = ev; W.code = code; if (W.monthly == null) W.monthly = ev.funds.defaults.monthly_deposit; if (W.initial == null) W.initial = ev.funds.defaults.initial_cash;
+  wizard();
+}
+const INCOME_CHOICES = [0, 30000, 50000, 80000, 100000, 150000], MONTHLY_CHOICES = [1000, 3000, 5000, 10000, 30000], INITIAL_CHOICES = [0, 10000, 50000, 100000, 300000, 1000000];
+const manYen = (n) => (n === 0 ? '0円' : n % 10000 === 0 ? `${num(n / 10000)}万円` : yen(n));
+function moneyField(id, value, choices) {
+  return `<div class="chips" role="group">${choices.map((c) => `<button type="button" class="chip ${value === c ? 'on' : ''}" data-set="${c}">${manYen(c)}</button>`).join('')}</div>
+  <label for="${id}" class="sub" style="font-weight:400;margin-top:10px">自分で入力する</label><div class="yenin"><input id="${id}" inputmode="numeric" autocomplete="off" value="${value == null ? '' : num(value)}"></div>`;
+}
+function readMoney(id) { const raw = $('#' + id).value.replace(/[,\s円]/g, ''); if (raw === '') return null; return /^\d+$/.test(raw) ? Number(raw) : NaN; }
+function wizard() {
+  const ev = W.ev; const v = $('#view'); const L = ev.funds.limits; const s = W.step;
+  const head = s === 0 ? '' : `<div class="prog" role="progressbar" aria-valuemin="1" aria-valuemax="${WIZ_STEPS}" aria-valuenow="${s}"><span style="width:${(s / WIZ_STEPS) * 100}%"></span></div><div class="num">質問 ${s} / ${WIZ_STEPS}</div>`;
+  const foot = (nextLabel, opts = {}) => `<div class="foot"><div id="wmsg"></div><div class="stack"><button class="btn pri" id="wnext" ${opts.disabled ? 'disabled' : ''}>${nextLabel}</button>${s > 0 ? '<button class="btn quiet" id="wback">戻る</button>' : ''}</div>${opts.skip ? '<p style="text-align:center"><button class="linkbtn" id="wskip">質問をとばして、金額だけ決める</button></p>' : ''}</div>`;
+  const local = '<p class="fine">この回答はこの端末の中だけで使い、送信・保存しません。</p>';
+  let body;
+  if (s === 0) body = `<div class="eyebrow">資産形成シミュレーター</div><h1>${esc(ev.name)}</h1>
+    <p>投資対象を自分で選び、買う・売る・積み立てるを試せます。氏名やメールアドレスの入力は不要で、実際のお金や口座にはつながりません。</p>
+    <div class="msg">${periodLine(ev.data)}</div>${startStatusHtml(ev)}
+    <p>はじめに、いくつかの質問に答えて<b>自分に合った金額</b>を決めます（1分ほど）。</p>
+    <p class="fine">開催時間: ${esc(new Date(ev.starts_at).toLocaleString('ja-JP'))} 〜 ${esc(new Date(ev.ends_at).toLocaleString('ja-JP'))}。終了後は操作できなくなり、参加データは終了の ${ev.retention_hours} 時間後に自動削除されます（削除には運用上の制約があります。詳しくは主催者にご確認ください）。</p>
+    ${foot(ev.joinable ? 'はじめる' : '現在は参加できません', { disabled: !ev.joinable })}`;
+  else if (s === 1) body = `<h1>いまの学年を教えてください</h1>${local}<div class="choices">${GRADES.map((g) => `<button type="button" class="chip ${W.grade === g ? 'on' : ''}" data-grade="${g}">${g}</button>`).join('')}</div>${foot('次へ', { skip: true })}`;
+  else if (s === 2) body = `<h1>毎月の収入は、だいたいいくらですか</h1><p class="sub">アルバイト代・仕送り・おこづかいなどの合計です。おおよそで構いません。</p>${local}${moneyField('wval', W.income, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
+  else if (s === 3) body = `<h1>毎月の支出は、だいたいいくらですか</h1><p class="sub">家賃・食費・通信費・交際費など、毎月出ていくお金の合計です。</p>${local}${moneyField('wval', W.expense, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
+  else if (s === 4) {
+    const rest = W.income != null && W.expense != null ? W.income - W.expense : null;
+    body = `<h1>毎月、投資に回す金額を決めましょう</h1>
+    ${rest != null ? `<div class="calc"><div><span>毎月の収入</span><span>${yen(W.income)}</span></div><div><span>毎月の支出</span><span>−${yen(W.expense)}</span></div><div><span>差し引き</span><span>${rest < 0 ? '−' + yen(-rest) : yen(rest)}</span></div></div><p class="sub">差し引きの範囲で、無理のない金額を自分で決めてください。</p>` : '<p class="sub">シミュレーションの中で、毎月はじめに入ってくる金額です。</p>'}
+    ${moneyField('wval', W.monthly, [0, ...MONTHLY_CHOICES])}<p class="fine">0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
+  } else if (s === 5) body = `<h1>最初に用意する金額を決めましょう</h1><p class="sub">シミュレーションの開始時点で持っているお金です。貯金のうち、投資に回してもよいと思う金額を入れてみてください。</p>
+    ${moneyField('wval', W.initial, INITIAL_CHOICES)}<p class="fine">0〜${yen(L.initial_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
+  else body = `<h1>この条件で始めます</h1>
+    <dl class="pair"><div><dt>最初の金額</dt><dd>${yen(W.initial)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(W.monthly)}</dd></div></dl>
+    <p class="sub">${periodLine(ev.data)} 金額は、あとで「メニュー」から変えてやり直せます。</p>
+    <h2 style="margin-top:22px">必ずお読みください</h2>${discHtml()}
+    <label style="font-weight:600"><input type="checkbox" id="agree">上記を読み、理解しました</label>
+    ${foot('この条件で始める', { disabled: true })}`;
+  v.innerHTML = `<div class="wiz">${head}${body}</div>`;
+  const msg = (t) => { $('#wmsg').innerHTML = t ? `<div class="msg err">⚠ ${esc(t)}</div>` : ''; };
+  const go = (n) => { W.step = n; wizard(); window.scrollTo(0, 0); };
+  $('#wback')?.addEventListener('click', () => go(s - 1)); $('#wskip')?.addEventListener('click', () => go(4));
+  document.querySelectorAll('[data-grade]').forEach((b) => b.addEventListener('click', () => { W.grade = b.dataset.grade; go(2); }));
+  document.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => { $('#wval').value = num(Number(b.dataset.set)); document.querySelectorAll('[data-set]').forEach((x) => x.classList.toggle('on', x === b)); msg(''); }));
+  $('#agree')?.addEventListener('change', (e) => { $('#wnext').disabled = !(e.target.checked && ev.joinable); });
+  $('#wnext').addEventListener('click', async () => {
+    if (s === 0) return go(1);
+    if (s === 1) return go(2);
+    if (s >= 2 && s <= 5) {
+      const val = readMoney('wval'); const key = ['income', 'expense', 'monthly', 'initial'][s - 2];
+      if (Number.isNaN(val)) return msg('半角の数字で入力してください');
+      if (s <= 3) { W[key] = val; return go(s + 1); } // 収入・支出は空欄でもよい
+      if (val == null) return msg('金額を選ぶか、入力してください');
+      const max = s === 4 ? L.monthly_max : L.initial_max;
+      if (val > max) return msg(`${yen(max)}以下で入力してください`);
+      if (val % L.step) return msg(`${yen(L.step)}単位で入力してください`);
+      W[key] = val;
+      if (s === 5 && W.initial === 0 && W.monthly === 0) return msg('最初の金額と毎月の金額のどちらかは、1,000円以上にしてください');
+      return go(s + 1);
+    }
+    const b = $('#wnext'); b.disabled = true;
+    try {
+      const r = await api('POST', '/api/join', { code: W.code, initial_cash: W.initial, monthly_deposit: W.monthly });
+      store.set(r.token); ls.set(PROFILE_KEY, JSON.stringify({ grade: W.grade, income: W.income, expense: W.expense }));
+      history.replaceState(null, '', '/#/guide'); route();
+    } catch (e) { msg(e.message); b.disabled = false; }
+  });
 }
 
-function startStatusHtml(ev) {
-  if (!ev.data_ready) return '<div class="msg warn"><b>データ未設定</b>のため、まだ開始できません。主催者の準備が終わるまでお待ちください。</div>';
-  const m = { open: ['ok', '開催中です。下の注意事項を読んで参加してください。'], not_started: ['info', `開始前です。${new Date(ev.starts_at).toLocaleString('ja-JP')} 以降に参加できます（時刻はサーバー基準）。`],
-    paused: ['warn', '主催者により一時停止中です。再開までお待ちください。'], ended: ['warn', 'この説明会は終了しました。新しい参加・操作はできません。'], purged: ['warn', 'この説明会は終了し、参加データは削除済みです。'],
-    stopped: ['warn', 'この説明会は停止されています。'], not_enabled: ['info', '準備中です（公開前）。'], unverified: ['info', '準備中です（動作確認が完了していません）。'] }[ev.status] || ['info', ev.status_ja];
-  return `<div class="msg ${m[0]}">状態: <b>${esc(ev.status_ja)}</b> — ${esc(m[1])}</div>`;
+// ---------- 使い方（4ステップ） ----------
+const GUIDE = [
+  ['えらぶ', '下の「さがす」から、投資対象を1つえらびます。分類や、これまでの値動きを見られます。'],
+  ['注文する', '「買う」「売る」「積立」のどれかを押して、金額を入れます。注文はその日の終わりに受け付けられ、あとの営業日の価格で成立します。成立する価格は、注文するときには分かりません。'],
+  ['時間を進める', 'ホームの「翌営業日へ」「翌月へ」で日付を進めます。過去の実際の値動きを、順番に体験していきます。'],
+  ['ふり返る', 'データの最終日まで進むと、結果が出ます。金額や買い方を変えて、何度でもやり直せます。'],
+];
+let guideStep = 0;
+async function viewGuide() {
+  const i = guideStep; const [t, d] = GUIDE[i]; const last = i === GUIDE.length - 1;
+  $('#view').innerHTML = `<div class="wiz"><div class="prog"><span style="width:${((i + 1) / GUIDE.length) * 100}%"></span></div><div class="num">使い方 ${i + 1} / ${GUIDE.length}</div>
+  <div class="bignum" aria-hidden="true">${i + 1}</div><h1>${esc(t)}</h1><p>${esc(d)}</p>
+  <div class="foot"><div class="stack"><button class="btn pri" id="gnext">${last ? 'ホームへ進む' : '次へ'}</button>${i > 0 ? '<button class="btn quiet" id="gback">戻る</button>' : ''}</div>${last ? '' : '<p style="text-align:center"><button class="linkbtn" id="gskip">とばしてホームへ</button></p>'}</div></div>`;
+  const done = () => { guideStep = 0; ls.set(GUIDE_KEY, '1'); location.hash = '#/home'; };
+  $('#gnext').onclick = () => { if (last) done(); else { guideStep++; viewGuide(); window.scrollTo(0, 0); } };
+  $('#gback')?.addEventListener('click', () => { guideStep--; viewGuide(); }); $('#gskip')?.addEventListener('click', done);
 }
 
 // ---------- 共通部品 ----------
 function chart(series, opts = {}) {
   if (!series.length) return '<div class="sub">データがありません</div>';
-  const W = 600, H = 160, P = 8; const ys = series.map((s) => s[1]); let lo = Math.min(...ys), hi = Math.max(...ys); if (lo === hi) { lo -= 1; hi += 1; }
-  const x = (i) => P + (i / Math.max(1, series.length - 1)) * (W - 2 * P), y = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
+  if (series.length < 2) return '<p class="fine" style="border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 0">日付を進めると、ここに値動きのグラフが表示されます。</p>';
+  const W0 = 600, H = 150, P = 6; const ys = series.map((s) => s[1]); let lo = Math.min(...ys), hi = Math.max(...ys); if (lo === hi) { lo -= 1; hi += 1; }
+  const x = (i) => P + (i / Math.max(1, series.length - 1)) * (W0 - 2 * P), y = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
   const pts = series.map((s, i) => `${x(i).toFixed(1)},${y(s[1]).toFixed(1)}`).join(' ');
-  let extra = ''; if (opts.base) { const by = y(opts.base[1]); extra = `<polyline points="${series.map((s, i) => `${x(i).toFixed(1)},${y(opts.base[0][i]).toFixed(1)}`).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>`; void by; }
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || '推移')}" style="color:var(--sub)"><polyline points="${pts}" fill="none" stroke="var(--pri)" stroke-width="2.5"/>${extra}</svg>
-  <div class="sub" style="display:flex;justify-content:space-between"><span>${esc(jdate(series[0][0]))}</span><span>最小 ${esc(Math.round(lo).toLocaleString('ja-JP'))} / 最大 ${esc(Math.round(hi).toLocaleString('ja-JP'))}</span><span>${esc(jdate(series[series.length - 1][0]))}</span></div>`;
+  return `<svg class="chart" viewBox="0 0 ${W0} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(opts.label || '推移')}"><line x1="0" y1="${H - 1}" x2="${W0}" y2="${H - 1}" stroke="#17223b" stroke-width="1"/><polyline points="${pts}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+  <div class="chart-ends"><span>${esc(jdate(series[0][0]))}</span><span>最小 ${esc(num(Math.round(lo)))} ／ 最大 ${esc(num(Math.round(hi)))}</span><span>${esc(jdate(series[series.length - 1][0]))}</span></div>`;
 }
 const tagFor = (s) => ({ accepted: '<span class="tag acc">受付済み</span>', filled: '<span class="tag fill">成立済み</span>', cancelled: '<span class="tag cx">取消済み</span>', lapsed: '<span class="tag lap">失効</span>' }[s] || esc(s));
-const sideJa = (o) => `${o.kind === 'fund' ? '投信' : '株式/ETF'} ${o.side === 'buy' ? '買い' : '売り'}`;
+const sideJa = (o) => `${o.side === 'buy' ? '買い' : '売り'}`;
 function orderLine(o, cancellable, curDate) {
-  const qty = o.kind === 'fund' && o.side === 'buy' ? yen(o.amount) : o.kind === 'fund' ? `${(o.qty || 0).toLocaleString('ja-JP')}口` : `${(o.qty || 0).toLocaleString('ja-JP')}株`;
-  let timing = ''; if (o.status === 'accepted') timing = `約定予定: ${jdate(o.exec_date)}${o.kind === 'stock' ? '（始値）' : '（基準価額）'}`;
-  else if (o.status === 'filled') timing = `約定 ${jdate(o.closed_date)}${o.price_milli != null ? ` / 価格 ${milli(o.price_milli)}` : ''}${o.fee ? ` / 費用 ${yen(o.fee)}` : ''}${o.units ? ` / ${o.units.toLocaleString('ja-JP')}口` : ''}`;
+  const qty = o.kind === 'fund' && o.side === 'buy' ? yen(o.amount) : o.kind === 'fund' ? `${num(o.qty || 0)}口` : `${num(o.qty || 0)}株`;
+  let timing = ''; if (o.status === 'accepted') timing = `成立する予定の日: ${jdate(o.exec_date)}`;
+  else if (o.status === 'filled') timing = `${jdate(o.closed_date)} 成立${o.price_milli != null ? ` ／ 価格 ${milli(o.price_milli)}` : ''}${o.fee ? ` ／ 費用 ${yen(o.fee)}` : ''}${o.units ? ` ／ ${num(o.units)}口` : ''}`;
   else timing = `${jdate(o.closed_date)}　${esc(o.reason || '')}`;
-  const cx = o.status === 'accepted' && cancellable && o.placed_date === curDate ? `<button class="btn danger" data-cancel="${o.id}">取消</button>` : o.status === 'accepted' ? '<span class="sub">取消期限を過ぎています</span>' : '';
-  return `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(o.name)}</b>${tagFor(o.status)}</div><div>${sideJa(o)} ${qty}${o.origin === 'plan' ? ' <span class="tag">積立</span>' : ''}</div><div class="sub">注文日 ${jdate(o.placed_date)}　${timing}</div>${cx}</div>`;
+  const cx = o.status === 'accepted' && cancellable && o.placed_date === curDate ? `<div style="margin-top:8px"><button class="btn danger sm" data-cancel="${o.id}">この注文を取り消す</button></div>` : o.status === 'accepted' ? '<div class="fine">取消できる期限を過ぎています</div>' : '';
+  return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span class="nm">${esc(o.name)}</span>${tagFor(o.status)}</div><div>${sideJa(o)} ${qty}${o.origin === 'plan' ? ' <span class="tag">積立</span>' : ''}</div><div class="fine">注文した日 ${jdate(o.placed_date)}　${timing}</div>${cx}</div>`;
 }
 async function lookup(requestId) { try { return await api('GET', '/api/requests/' + encodeURIComponent(requestId)); } catch (e) { return e.unknown ? null : { found: false }; } }
-async function doPost(path, body, onUnknown) {
-  const b = { request_id: rid(), expected_sim_date: S.me.account.sim_date, ...body };
-  try { return await api('POST', path, b); } catch (e) { if (e.unknown && onUnknown) onUnknown(path, b); throw e; }
-}
-
-// ---------- ホーム ----------
-async function viewHome() {
-  const m = S.me, a = m.assets, v = $('#view'); const fin = m.account.status !== 'active';
-  const stopHtml = S.stop ? `<div class="msg warn"><b>自動停止: ${esc(S.stop.message)}</b><br>次にできること: ${esc(S.stop.next)}</div>` : '';
-  const dataBase = m.series.map((s) => [s.date, s.total]);
-  const attemptJa = m.account.attempt === 1 ? '初回' : `再試行（${m.account.attempt}回目）`;
-  let guideSeen = false; try { guideSeen = localStorage.getItem('nisa_sim_guide') === '1'; } catch { /* noop */ }
-  const guide = guideSeen ? '' : `<div class="card" id="guide"><h2 style="margin-top:0">はじめに（30秒）</h2><ol>
-    <li>「投資対象」から選び、<b>買う・売る・積立</b>のどれかを押します。</li>
-    <li>注文は<b>その日の終わりに受け付け</b>、翌営業日（投資信託は次の基準価額）で成立します。日付を進めるまでは取消できます。</li>
-    <li>ホームの「翌営業日へ」「翌月へ」「月ごとに自動進行」で時間を進めます。</li>
-    <li>データの最終日まで進むと結果を確認でき、同じ条件でやり直せます。損益は<b>税引前</b>です。</li></ol>
-    <button class="btn" id="guide-ok">わかりました</button></div>`;
-  const resultHtml = fin ? `<div class="card"><h2 style="margin-top:0">結果（${attemptJa}）</h2><table>
-    <tr><th>期間</th><td class="n">${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}</td></tr>
-    <tr><th>総資産</th><td class="n">${yen(a.total)}</td></tr><tr><th>入金累計</th><td class="n">${yen(a.deposits)}</td></tr>
-    <tr><th>運用損益（税引前・手数料込み）</th><td class="n">${plLabel(a.pnl)}</td></tr></table>
-    ${allocHtml(m.allocation)}<div class="sub">過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</div>
-    <div class="btns"><a class="btn" href="#/history">履歴を見る</a><a class="btn" href="#/compare">試行を比べる</a><a class="btn" href="#/more">同じ条件でやり直す</a></div></div>` : '';
-  v.innerHTML = `${stopHtml}${guide}
-  <h1>ホーム <span class="tag">${attemptJa}</span></h1><p class="sub">${periodLine(m.event.data)} いまの日付は<b>シミュレーション上の日付</b>（${jdate(m.account.sim_date)}）で、実際の今日ではありません。</p>${resultHtml}
-  <div class="card kpi big"><div class="k">総資産 <button class="q" data-term="settle" aria-label="説明">?</button></div><div class="v">${yen(a.total)}</div>
-    <div>運用損益（税引前）${Q('pretax')}: ${plLabel(a.pnl)}</div>
-    <div class="sub">総資産 = 現金残高 + 保有の評価額 − 未受渡の買付代金 + 未受渡の売却代金 + 未収配当等。約定から受渡までの間も資産が消えたり重複したりしません。</div></div>
-  <div class="grid g4">
-    <div class="card kpi"><div class="k">買付可能額 ${Q('buying')}</div><div class="v">${yen(a.available)}</div><div class="sub">新しい注文に使える金額</div></div>
-    <div class="card kpi"><div class="k">現金残高</div><div class="v">${yen(a.cash)}</div><div class="sub">うち注文拘束 ${yen(a.reserved)}／受渡待ちの買付代金 ${yen(a.payable_purchase)}</div></div>
-    <div class="card kpi"><div class="k">入金累計</div><div class="v">${yen(a.deposits)}</div></div>
-    <div class="card kpi"><div class="k">保有の評価額</div><div class="v">${yen(a.holdings_value)}</div></div>
-  </div>
-  ${m.receivables.length ? `<div class="msg info"><b>受渡・入金の予定</b>（未受渡の売却代金は受渡日まで買付に使えません）${m.receivables.map((r) => `<br>・${esc(r.name)} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</div>` : ''}
-  <div class="card"><h2 style="margin-top:0">時間を進める</h2>${fin ? `<div class="msg ok">${m.account.status === 'finished' ? 'データの最終日（' + jdate(m.account.final_date) + '）に到達しました。この先の価格データは存在しないため、これ以上は進められません。結果を確認できます。' : '閲覧専用です。'}</div>` : ''}
-    <div class="sub">進めると、その間の約定・受渡・配当・積立が営業日ごとに順番に処理されます。${m.next_deposit_date ? `毎月の追加資金 ${yen(m.event.monthly_deposit)} は、次回 ${jdate(m.next_deposit_date)}（月の最初の営業日）に入金されます。` : ''}</div>
-    <div class="btns"><button class="btn pri" id="adv-day" ${locked() || S.auto ? 'disabled' : ''}>翌営業日へ</button><button class="btn pri" id="adv-month" ${locked() || S.auto ? 'disabled' : ''}>翌月へ</button>
-    <button class="btn" id="auto" ${locked() ? 'disabled' : ''}>${S.auto ? '停止' : '月ごとに自動進行'}</button></div>
-    ${S.auto ? '<div class="msg info">自動進行中です。注文・積立の操作は停止してから行ってください（注文の競合を防ぐため）。注文成立・失効・資金不足・ニュースで自動的に止まります。</div>' : ''}
-    <div id="advres">${eventsHtml(S.last)}</div></div>
-  ${fin ? '' : `<div class="card"><h2 style="margin-top:0">資産配分</h2>${allocHtml(m.allocation)}</div>`}
-  <div class="card"><h2 style="margin-top:0">資産推移</h2>${chart(dataBase, { label: '総資産の推移' })}</div>
-  <h2>保有している投資対象</h2>
-  ${a.holdings.length ? `<div class="card" style="overflow-x:auto"><table><tr><th>名称</th><th class="n">保有数量</th><th class="n">評価額</th><th class="n">損益（税引前）</th></tr>${a.holdings.map((h) => { const u = h.type === 'fund' ? '口' : '株'; return `<tr><td><a href="#/i/${esc(h.instrument_id)}">${esc(h.name)}</a>${h.stale ? ' <span class="tag prov">価格更新なし</span>' : ''}</td><td class="n">${h.qty.toLocaleString('ja-JP')}${u}${h.unsettled_qty ? `<br><span class="sub">うち受渡前 ${h.unsettled_qty.toLocaleString('ja-JP')}${u}</span>` : ''}<br><span class="sub">売却可能 ${h.sellable_qty.toLocaleString('ja-JP')}${u}</span></td><td class="n">${yen(h.value)}</td><td class="n">${plLabel(h.pnl)}</td></tr>`; }).join('')}</table></div>` : '<div class="msg info">まだ保有はありません。「投資対象」から選べます。</div>'}
-  ${m.orders.length ? `<div class="msg info">受付済みの注文が ${m.orders.length} 件あります。<a href="#/orders">注文を見る</a></div>` : ''}
-  <h2>最新のイベント</h2>${newsList(m.news.slice(0, 3))}<a href="#/news">これまでのイベントを見る</a>
-  ${fin ? '<h2>ご利用上の注意（結果画面）</h2>' + discHtml() : '<details><summary>ご利用上の注意</summary>' + discHtml() + '</details>'}
-  ${m.event.provisional && Object.values(m.event.provisional).some(Boolean) ? '<div class="msg warn">一部の設定（初期資金・毎月の追加資金・期間など）は仮設定です。</div>' : ''}`;
-  $('#guide-ok')?.addEventListener('click', () => { try { localStorage.setItem('nisa_sim_guide', '1'); } catch { /* noop */ } $('#guide').remove(); });
-  $('#adv-day')?.addEventListener('click', () => advance('day')); $('#adv-month')?.addEventListener('click', () => advance('month'));
-  $('#auto')?.addEventListener('click', () => (S.auto ? stopAuto(true) : startAuto()));
-}
+async function doPost(path, body) { return api('POST', path, { request_id: rid(), expected_sim_date: S.me.account.sim_date, ...body }); }
 // 資産配分: 分類ごとの金額と割合（色だけに頼らず、数値と棒の長さで示す）
 function allocHtml(al) {
   if (!al || !al.length) return '';
   return `<table class="alloc"><tr><th>分類</th><th class="n">金額</th><th class="n">割合</th></tr>${al.map((x) => `<tr><td>${esc(x.label)}<div class="bar"><span style="width:${Math.max(0, Math.min(100, x.pct_bp / 100))}%"></span></div></td><td class="n">${yen(x.value)}</td><td class="n">${(x.pct_bp / 100).toFixed(1)}%</td></tr>`).join('')}</table>`;
 }
-// 進行中の出来事: 重要なもの（成立・失効・見送り・ニュース・終了）は1件ずつ、定型のもの（入金・受渡・積立の発注など）は種類ごとに件数でまとめる
-const EV_GROUP = { deposit: '毎月の追加資金の入金', plan_order: '積立の注文', settled: '売却代金の受渡（入金）', dividend_declared: '配当・分配金の確定', dividend_paid: '配当・分配金等の入金', order_deferred: '基準価額なしによる繰り延べ', split: '分割・併合', split_fraction: '端数株の処分代金の確定' };
+// 進めた間の出来事: 重要なもの（成立・失効・見送り・ニュース）は1件ずつ、定型のもの（入金・受渡・積立の発注など）は種類ごとに件数でまとめる
+const EV_GROUP = { deposit: '毎月の入金', plan_order: '積立の注文', settled: '売却代金の受渡（入金）', dividend_declared: '配当・分配金の確定', dividend_paid: '配当・分配金等の入金', order_deferred: '基準価額なしによる繰り延べ', split: '分割・併合', split_fraction: '端数株の処分代金の確定' };
 function eventsHtml(list) {
   if (!list.length) return '';
-  const key = list.filter((e) => !EV_GROUP[e.type]); const routine = new Map();
+  const key = list.filter((e) => !EV_GROUP[e.type] && e.type !== 'end'); const routine = new Map();
   for (const e of list) if (EV_GROUP[e.type]) { const g = routine.get(e.type) || []; g.push(e); routine.set(e.type, g); }
-  const li = (e) => `<li>${esc(jdate(e.date))} ${esc(e.text)}</li>`;
-  return `<h3>今回進めた間の出来事（${esc(jdate(list[0].date))}〜${esc(jdate(list[list.length - 1].date))}）</h3>${key.length ? '<ul>' + key.slice(-12).map(li).join('') + '</ul>' + (key.length > 12 ? `<div class="sub">ほか ${key.length - 12} 件は「注文」「履歴」で確認できます。</div>` : '') : ''}
-  ${[...routine].map(([t, g]) => (g.length <= 2 ? '<ul>' + g.map(li).join('') + '</ul>' : `<details><summary>${esc(EV_GROUP[t])} ${g.length}件</summary><ul>${g.map(li).join('')}</ul></details>`)).join('')}`;
+  const li = (e) => `<li>${esc(jdate(e.date))}　${esc(e.text)}</li>`;
+  if (!key.length && !routine.size) return '';
+  return `<section class="blk"><h2>進めた間の出来事</h2><p class="fine">${esc(jdate(list[0].date))} 〜 ${esc(jdate(list[list.length - 1].date))}</p>${key.length ? '<ul>' + key.slice(-8).map(li).join('') + '</ul>' + (key.length > 8 ? `<p class="fine">ほか ${key.length - 8} 件は「記録」で確認できます。</p>` : '') : ''}
+  ${[...routine].map(([t, g]) => `<details><summary>${esc(EV_GROUP[t])}　${g.length}件</summary><div class="in"><ul>${g.map(li).join('')}</ul></div></details>`).join('')}</section>`;
 }
 function newsList(list) {
-  if (!list.length) return '<div class="msg info">まだ表示するイベントはありません。</div>';
-  return list.map((n) => `<div class="card"><div class="sub">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div><div class="sub">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('');
+  if (!list.length) return '<p class="sub">まだ表示するできごとはありません。</p>';
+  return `<div class="rows">${list.map((n) => `<div class="row" style="display:block"><div class="fine">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div><div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('')}</div>`;
+}
+
+// ---------- ホーム: いまの状態と、次にやること ----------
+const STEP_NAMES = ['えらぶ', '注文する', '時間を進める', 'ふり返る'];
+const stepLine = (cur) => `<div class="stepline" aria-label="いまの段階">${STEP_NAMES.map((n, i) => `<span class="${i + 1 === cur ? 'on' : i + 1 < cur ? 'done' : ''}"><i>${i + 1}</i>${n}</span>`).join('')}</div>`;
+const timeButtons = (primary) => `<div class="btns"><button class="btn ${primary ? 'pri' : ''}" id="adv-day" ${locked() || S.auto ? 'disabled' : ''}>翌営業日へ</button><button class="btn ${primary ? 'pri' : ''}" id="adv-month" ${locked() || S.auto ? 'disabled' : ''}>翌月へ</button></div>
+  <div class="stack"><button class="btn ${S.auto ? 'danger' : 'quiet'}" id="auto" ${locked() ? 'disabled' : ''}>${S.auto ? '自動進行を止める' : '月ごとに自動で進める'}</button></div>`;
+function nextCard(m) {
+  const a = m.assets;
+  if (m.event.status === 'paused') return `<div class="next"><h3>一時停止中です</h3><p>主催者が再開するまでお待ちください。</p></div>`;
+  if (m.account.status !== 'active') return `<div class="next">${stepLine(4)}<h3>データの最終日（${jdate(m.account.final_date)}）まで進みました</h3><p>この先の価格データは存在しないため、これ以上は進められません。記録を見たり、金額や買い方を変えてやり直したりできます。</p><div class="btns"><a class="btn pri" href="#/orders">記録を見る</a><a class="btn" href="#/more">やり直す</a></div></div>`;
+  if (S.auto) return `<div class="next">${stepLine(3)}<h3>自動で進めています</h3><p>注文の成立・失効、資金不足、新しいできごとがあると止まります。注文をするときは、いったん止めてください。</p>${timeButtons(true)}</div>`;
+  if (m.orders.length) return `<div class="next">${stepLine(3)}<h3>注文を受け付けました。日付を進めると成立します</h3><p>受付済みの注文が ${m.orders.length} 件あります。<a href="#/orders">注文を見る・取り消す</a></p>${timeButtons(true)}</div>`;
+  if (a.holdings.length || m.plans.length) return `<div class="next">${stepLine(3)}<h3>時間を進めて、値動きを見てみましょう</h3><p>${m.next_deposit_date ? `次の入金（${yen(m.event.monthly_deposit)}）は ${jdate(m.next_deposit_date)} です。` : ''}ほかの投資対象は「さがす」からえらべます。</p>${timeButtons(true)}</div>`;
+  return `<div class="next">${stepLine(1)}<h3>まず、投資対象をえらびましょう</h3><p>使えるお金は ${yen(a.available)} です。分類や値動きを見て、気になるものを開いてみてください。</p><div class="stack"><a class="btn pri" href="#/market">投資対象をさがす</a></div></div>`;
+}
+async function viewHome() {
+  if (!ls.get(GUIDE_KEY) && S.me.account.attempt === 1 && S.me.series.length <= 1 && !S.me.orders.length) { location.hash = '#/guide'; return; }
+  const m = S.me, a = m.assets, v = $('#view'); const fin = m.account.status !== 'active';
+  const attemptJa = m.account.attempt === 1 ? '初回' : `再試行（${m.account.attempt}回目）`;
+  const stopHtml = S.stop ? `<div class="msg warn"><b>${esc(S.stop.message)}</b><br>${esc(S.stop.next)}</div>` : '';
+  const firstStep = !fin && !S.auto && !m.orders.length && !a.holdings.length && !m.plans.length && m.event.status !== 'paused';
+  v.innerHTML = `${stopHtml}
+  <section class="blk"><div class="eyebrow">${fin ? '結果' : '総資産'} ・ ${attemptJa} ${Q('total')}</div>
+    <div class="figure">${num(a.total)}<small>円</small></div>
+    <div style="margin-top:6px">${plLabel(a.pnl)} <span class="fine">税引前 ${Q('pretax')}</span></div>
+    <dl class="pair"><div><dt>使えるお金 ${Q('buying')}</dt><dd>${yen(a.available)}</dd></div><div><dt>入金した合計</dt><dd>${yen(a.deposits)}</dd></div></dl>
+    ${fin ? `<p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>` : ''}
+  </section>
+  ${nextCard(m)}
+  ${eventsHtml(S.last)}
+  ${a.holdings.length ? `<section class="blk"><h2>持っている投資対象</h2><div class="rows">${a.holdings.map((h) => { const u = h.type === 'fund' ? '口' : '株'; return `<a class="row" href="#/i/${esc(h.instrument_id)}"><div class="grow"><div class="nm">${esc(h.name)}</div><div class="fine">${num(h.qty)}${u}${h.unsettled_qty ? `（うち受渡前 ${num(h.unsettled_qty)}${u}）` : ''}${h.stale ? ' <span class="tag prov">価格更新なし</span>' : ''}</div></div><div class="r"><b>${yen(h.value)}</b><div class="fine">${plLabel(h.pnl)}</div></div></a>`; }).join('')}</div></section>` : ''}
+  ${m.series.length > 1 ? `<section class="blk"><h2>総資産の動き</h2>${chart(m.series.map((s) => [s.date, s.total]), { label: '総資産の推移' })}</section>` : ''}
+  ${firstStep ? `<section class="blk"><h2>時間だけ進める</h2><p class="sub">何も買わずに日付を進めることもできます。</p>${timeButtons(false)}</section>` : ''}
+  <section class="blk" style="padding-bottom:0">
+    <details ${fin ? 'open' : ''}><summary>お金の内訳と資産配分</summary><div class="in"><table>
+      <tr><th>現金残高</th><td class="n">${yen(a.cash)}</td></tr><tr><th>うち注文のために確保中</th><td class="n">${yen(a.reserved)}</td></tr><tr><th>受渡を待っている買付代金 ${Q('settle')}</th><td class="n">${yen(a.payable_purchase)}</td></tr>
+      <tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}</table>
+      ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(r.name)} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
+      <h3>資産配分</h3>${allocHtml(m.allocation)}</div></details>
+    <details><summary>これまでのできごと${m.news.length ? `　${m.news.length}件` : ''}</summary><div class="in"><p class="fine">その日までに公表されていたものだけを表示します。</p>${newsList(m.news.slice(0, 3))}${m.news.length > 3 ? '<p><a href="#/news">すべて見る</a></p>' : ''}</div></details>
+    ${fin ? `<div style="padding-top:16px"><h2>ご利用上の注意</h2>${discHtml()}</div>` : ''}
+  </section>
+  <p class="fine" style="margin-top:18px">${periodLine(m.event.data)} いまの日付は<b>シミュレーション上の日付</b>で、実際の今日ではありません。${Object.values(m.event.provisional || {}).some(Boolean) ? '一部の設定は仮設定です。' : ''}</p>`;
+  $('#adv-day')?.addEventListener('click', () => advance('day')); $('#adv-month')?.addEventListener('click', () => advance('month'));
+  $('#auto')?.addEventListener('click', () => (S.auto ? stopAuto(true) : startAuto()));
 }
 async function advance(mode) {
   if (S.busy) return; S.busy = true;
@@ -227,50 +304,55 @@ async function advance(mode) {
     try { r = await api('POST', '/api/advance', body); } catch (e) {
       if (!e.unknown) throw e;
       const q = await lookup(body.request_id); // 受付状況を照会
-      if (q === null) throw e; if (!q.found) { toast('進行は受け付けられていませんでした。もう一度押してください'); await refresh(); if (location.hash.startsWith('#/home') || !location.hash) await viewHome(); return null; }
+      if (q === null) throw e; if (!q.found) { toast('進行は受け付けられていませんでした。もう一度押してください'); await refresh(); if (onHome()) await viewHome(); return null; }
       r = q.response;
     }
-    S.last = r.events; S.stop = mode === 'day' && r.stop?.reason !== 'end' ? null : r.stop; const onHome = location.hash.startsWith('#/home') || !location.hash; if (!S.auto && !onHome) r.events.slice(-2).forEach((e) => toast(e.text)); // ホームでは「進めた間の出来事」に同じ内容が出るため、重ねて通知しない
-    await refresh(); if (location.hash.startsWith('#/home') || !location.hash) await viewHome();
+    S.last = r.events; S.stop = r.stop && r.stop.reason !== 'end' && mode !== 'day' ? r.stop : null;
+    if (!S.auto && !onHome()) r.events.slice(-2).forEach((e) => toast(e.text)); // ホームでは「進めた間の出来事」に同じ内容が出るため、重ねて通知しない
+    await refresh(); if (onHome()) await viewHome();
     return r;
   } catch (e) {
     if (e.status === 409) { S.stop = { message: '画面の日付が古くなっていました', next: '最新の状態に更新しました。もう一度操作してください' }; await route(); }
-    else if (e.unknown) { toast('通信結果が未確認です。通信が戻ったら画面を更新して日付を確認してください（二重には進みません）'); if (location.hash.startsWith('#/home') || !location.hash) viewHome(); }
+    else if (e.unknown) { toast('通信結果が未確認です。通信が戻ったら画面を更新して日付を確認してください（二重には進みません）'); if (onHome()) viewHome(); }
     else if (!e.ended) toast(e.message);
     return null;
   } finally { S.busy = false; }
 }
-function startAuto() { S.auto = true; S.stop = null; viewHome(); const tick = async () => { if (!S.auto) return; const r = await advance('month'); if (!r || r.stop || S.me.account.status !== 'active') { stopAuto(); if (r?.stop) viewHome(); return; } S.autoTimer = setTimeout(tick, 1200); }; tick(); }
+function startAuto() { S.auto = true; S.stop = null; viewHome(); const tick = async () => { if (!S.auto) return; const r = await advance('month'); if (!r || r.stop || S.me.account.status !== 'active') { stopAuto(); if (onHome()) viewHome(); return; } S.autoTimer = setTimeout(tick, 1200); }; tick(); }
 function stopAuto(rerender) { S.auto = false; clearTimeout(S.autoTimer); if (rerender) viewHome(); }
 
-// ---------- 投資対象 ----------
+// ---------- さがす ----------
 let marketState = { q: '', cat: '' };
 async function viewMarket() {
   const r = await api('GET', `/api/instruments?q=${encodeURIComponent(marketState.q)}&category=${encodeURIComponent(marketState.cat)}`);
-  $('#view').innerHTML = `<h1>投資対象</h1><p class="sub">特定の商品をすすめるものではありません。並びは一覧の登録順です。</p>
-  <label for="q">名称・キーワードで検索</label><input id="q" type="search" value="${esc(marketState.q)}" placeholder="例: 国内株式">
+  $('#view').innerHTML = `<h1>投資対象をさがす</h1><p class="fine">特定の商品をすすめるものではありません。並びは登録順です。</p>
   <div class="chips" role="group" aria-label="分類">${['', ...r.categories].map((c) => `<button class="chip ${marketState.cat === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c || 'すべて')}</button>`).join('')}</div>
-  ${r.items.length ? r.items.map((i) => { const chg = i.prev_close_milli ? i.price_milli - i.prev_close_milli : 0; return `<a class="card inst" href="#/i/${esc(i.id)}"><div><div class="nm">${esc(i.name)}</div><div class="sub">${esc(i.category)}${i.qty ? ` ／ 保有 ${i.qty.toLocaleString('ja-JP')}${i.type === 'fund' ? '口' : '株'}（${yen(i.value)}）` : ''}</div></div><div style="text-align:right"><div>${milli(i.price_milli)}${i.type === 'fund' ? '円/1万口' : '円'}</div><div class="sub">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div></div></a>`; }).join('') : '<div class="msg info">該当する投資対象がありません。</div>'}`;
+  <label for="q" class="sub" style="font-weight:400">名前で検索</label><input id="q" type="search" value="${esc(marketState.q)}" placeholder="例: 株式">
+  <div class="rows" style="margin-top:16px">${r.items.length ? r.items.map((i) => { const chg = i.prev_close_milli ? i.price_milli - i.prev_close_milli : 0; return `<a class="row" href="#/i/${esc(i.id)}"><div class="grow"><div class="cat">${esc(i.category)}</div><div class="nm">${esc(i.name)}</div>${i.qty ? `<div class="fine">保有 ${num(i.qty)}${i.type === 'fund' ? '口' : '株'}（${yen(i.value)}）</div>` : ''}</div><div class="r"><b>${milli(i.price_milli)}</b><span class="fine">円</span><div class="fine">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div></div></a>`; }).join('') : '<p class="sub" style="padding:16px 0">該当する投資対象がありません。</p>'}</div>
+  <p class="fine">投資信託の価格は、1万口あたりの基準価額です。${Q('nav')}</p>`;
   let t; const qi = $('#q'); if (marketState.focus) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); marketState.focus = false; }
   qi.addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { marketState.q = e.target.value; marketState.focus = true; viewMarket(); }, 400); });
   document.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { marketState.cat = b.dataset.cat; viewMarket(); }));
 }
 
-// ---------- 詳細・注文 ----------
+// ---------- 商品の詳細と注文 ----------
 let ord = null;
 async function viewInstrument(id) {
-  const d = await api('GET', '/api/instruments/' + encodeURIComponent(id)); const isFund = d.type === 'fund'; const t = d.terms;
-  const typeJa = { stock: '国内株式', etf: '国内ETF', fund: '投資信託' }[d.type];
+  const d = await api('GET', '/api/instruments/' + encodeURIComponent(id)); const isFund = d.type === 'fund'; const t = d.terms; const u = isFund ? '口' : '株';
   const chg = d.prev_close_milli ? d.price_milli - d.prev_close_milli : 0;
-  $('#view').innerHTML = `<p><a href="#/market">← 投資対象へ</a></p><h1>${esc(d.name)}</h1><div class="sub">${esc(typeJa)} ／ ${esc(d.category)}</div><p>${esc(d.description)}</p>
-  <div class="card kpi"><div class="k">${d.stale ? '最後に価格がついた日' : '現在の'}${isFund ? '基準価額' : '終値'} (${jdate(d.price_date)})</div><div class="v">${milli(d.price_milli)}${isFund ? ' 円/1万口' : ' 円'}</div><div class="sub">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div></div>
-  <div class="card">${chart(d.series.map((s) => [s[0], s[1] / 1000]), { label: '価格推移' })}<div class="sub">シミュレーション上の日付（${jdate(S.me.account.sim_date)}）までの実績のみ表示しています。過去を順番に体験するための表示で、この先の値動きを示唆・予測するものではありません。</div></div>
-  <div class="card"><b>保有</b>: ${d.holding ? `${d.holding.qty.toLocaleString('ja-JP')}${isFund ? '口' : '株'}（取得額 ${yen(d.holding.cost)}）<br><span class="sub">売却可能 ${d.sellable.toLocaleString('ja-JP')}${isFund ? '口' : '株'}${d.holding.unsettled_qty > 0 ? ` ／ 受渡前の買付分は受渡日まで売れません` : ''}</span>` : 'なし'}</div>
-  <div class="card"><h3 style="margin-top:0">取引条件${t.terms_status !== 'confirmed' ? ' <span class="tag prov">仮設定</span>' : ''}</h3><ul>
-    ${isFund ? `<li>購入: ${t.spot_buy_ok === false ? '積立（定時定額）のみ' : `${yen(t.min_amount)}以上 ${yen(t.amount_step)}単位`}${t.savings_ok ? ` ／ 積立は ${yen(t.savings_min_amount ?? t.min_amount)}以上 ${yen(t.savings_amount_step ?? t.amount_step)}単位` : ' ／ 積立は取扱なし'} ／ 購入時手数料 ${(t.fee.rate_ppm / 10000).toFixed(2)}%（税込・購入金額に含む）</li><li>適用価格: 注文した日の${t.nav_offset}営業日後の基準価額（日付の終わりに出した注文は翌営業日の申込として扱います）。注文時点では分かりません ${Q('nav')}</li><li>購入代金の受渡 約定後${t.buy_settlement_days}営業日（受渡前の口数は売却できません）</li><li>売却: 信託財産留保額 ${(t.holdback_ppm / 10000).toFixed(2)}% ${Q('holdback')} ／ 売却代金の受渡 約定後${t.settlement_days}営業日 ${Q('settle')}</li><li>分配金は現金で受け取ります（再投資は未対応）${Q('dist')}</li>` : `<li>売買単位 ${t.lot_size.toLocaleString('ja-JP')}株（口） ${Q('lot')}</li><li>成行注文のみ。日付の終わりに注文 → 翌営業日の始値で約定 ${Q('market')}</li><li>手数料 ${(t.fee.rate_ppm / 10000).toFixed(3)}%${t.fee.min ? `（最低 ${yen(t.fee.min)}）` : ''}${t.fee.fixed ? ` + ${yen(t.fee.fixed)}` : ''}</li><li>売却代金の受渡 約定後${t.settlement_days}営業日 ${Q('settle')}</li><li>買い注文中は、値上がりに備え${t.price_limit_table ? '注文日の終値＋制限値幅' : `約${(t.buy_reserve_margin_bp / 100).toFixed(0)}%の余裕`}を含む金額を確保します ${Q('reserve')}</li><li>買付代金は受渡日（約定後${t.settlement_days}営業日）に支払い。受渡前の株式は売却できません</li>`}
-  </ul><div class="sub">出典: ${d.source ? esc(d.source.name) + '（取得日 ' + esc(d.source.retrieved_at) + '）' : '-'}。条件は現在のものを過去の期間に当てはめています。板・流動性・スリッページは再現していません。</div></div>
-  <div class="seg" role="group" aria-label="操作"><button data-mode="buy">買う</button><button data-mode="sell">売る</button>${isFund && t.savings_ok ? '<button data-mode="plan">積立</button>' : ''}</div><div id="orderpanel"></div>
-  ${d.open_orders.length ? `<h3>この商品の受付済み注文</h3>${d.open_orders.map((o) => orderLine({ ...o, name: d.name }, !locked(), S.me.account.sim_date)).join('')}` : ''}`;
+  $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/market">‹ さがすへ戻る</a></p>
+  <section class="blk" style="padding-top:8px"><div class="eyebrow">${esc(d.category)}</div><h1 style="margin-top:4px">${esc(d.name)}</h1><p class="sub">${esc(d.description)}</p>
+    <div class="fine" style="margin-top:14px">${d.stale ? '最後に価格がついた日の' : ''}${isFund ? '基準価額（1万口あたり）' : '終値'}・${jdate(d.price_date)} ${isFund ? Q('nav') : ''}</div>
+    <div class="figure md">${milli(d.price_milli)}<small>円</small></div><div class="fine">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div>
+    <div style="margin-top:14px">${chart(d.series.map((s) => [s[0], s[1] / 1000]), { label: '価格推移' })}</div>
+    <p class="fine">シミュレーション上の日付（${jdate(S.me.account.sim_date)}）までの実績のみ表示しています。過去を順番に体験するための表示で、この先の値動きを示唆・予測するものではありません。</p>
+    ${d.holding ? `<div class="msg"><b>保有中</b>　${num(d.holding.qty)}${u}（買った金額 ${yen(d.holding.cost)}）<br><span class="fine">売れる数量 ${num(d.sellable)}${u}${d.holding.unsettled_qty > 0 ? '。受渡前の買付分は受渡日まで売れません' : ''}</span></div>` : ''}
+    <div class="seg" role="group" aria-label="操作"><button data-mode="buy">買う</button><button data-mode="sell" ${d.holding ? '' : 'disabled style="opacity:.4"'}>売る</button>${isFund && t.savings_ok ? '<button data-mode="plan">積立</button>' : ''}</div><div id="orderpanel"></div>
+  </section>
+  ${d.open_orders.length ? `<section class="blk"><h2>この商品の受付済み注文</h2><div class="rows">${d.open_orders.map((o) => orderLine({ ...o, name: d.name }, !locked(), S.me.account.sim_date)).join('')}</div></section>` : ''}
+  <section class="blk" style="padding-bottom:0"><details><summary>取引の条件と出典${t.terms_status !== 'confirmed' ? '　<span class="tag prov">仮設定</span>' : ''}</summary><div class="in"><ul>
+    ${isFund ? `<li>購入: ${t.spot_buy_ok === false ? '積立（定時定額）のみ' : `${yen(t.min_amount)}以上 ${yen(t.amount_step)}単位`}${t.savings_ok ? ` ／ 積立は ${yen(t.savings_min_amount ?? t.min_amount)}以上 ${yen(t.savings_amount_step ?? t.amount_step)}単位` : ' ／ 積立は取扱なし'}</li><li>購入時手数料 ${(t.fee.rate_ppm / 10000).toFixed(2)}%（税込・購入金額に含む）</li><li>適用価格: 注文した日の${t.nav_offset}営業日後の基準価額（日付の終わりに出した注文は翌営業日の申込として扱います）。注文時点では分かりません</li><li>購入代金の受渡 約定後${t.buy_settlement_days}営業日（受渡前の口数は売却できません）</li><li>売却: 信託財産留保額 ${(t.holdback_ppm / 10000).toFixed(2)}% ${Q('holdback')} ／ 売却代金の受渡 約定後${t.settlement_days}営業日 ${Q('settle')}</li><li>分配金は現金で受け取ります（再投資は未対応）${Q('dist')}</li>` : `<li>売買単位 ${num(t.lot_size)}株（口） ${Q('lot')}</li><li>成行注文のみ。日付の終わりに注文 → 翌営業日の始値で約定 ${Q('market')}</li><li>手数料 ${(t.fee.rate_ppm / 10000).toFixed(3)}%${t.fee.min ? `（最低 ${yen(t.fee.min)}）` : ''}${t.fee.fixed ? ` + ${yen(t.fee.fixed)}` : ''}</li><li>売却代金の受渡 約定後${t.settlement_days}営業日 ${Q('settle')}</li><li>買い注文中は、値上がりに備え${t.price_limit_table ? '注文日の終値＋制限値幅' : `約${(t.buy_reserve_margin_bp / 100).toFixed(0)}%の余裕`}を含む金額を確保します ${Q('reserve')}</li><li>買付代金は受渡日（約定後${t.settlement_days}営業日）に支払い。受渡前の株式は売却できません</li>`}
+  </ul><p class="fine">出典: ${d.source ? esc(d.source.name) + '（取得日 ' + esc(d.source.retrieved_at) + '）' : '-'}。条件は現在のものを過去の期間に当てはめています。板・流動性・スリッページは再現していません。</p></div></details></section>`;
   document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => openOrder(d, b.dataset.mode)));
   bindCancel(() => viewInstrument(id));
   if (ord && ord.id === id && ord.mode) openOrder(d, ord.mode, true);
@@ -280,30 +362,30 @@ function bindCancel(after) {
     b.disabled = true; try { await doPost(`/api/orders/${b.dataset.cancel}/cancel`, {}); toast('注文を取り消しました'); await refresh(); after(); } catch (e) { if (!e.ended) { toast(e.message); b.disabled = false; } }
   }));
 }
+const orderSteps = (n) => `<div class="steps">${['入力', '内容確認', '受付結果'].map((s, i) => (i + 1 === n ? `<b>${i + 1} ${s}</b>` : `${i + 1} ${s}`)).join(' › ')}</div>`;
 function openOrder(d, mode, keep) {
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
   if (!keep) ord = { id: d.id, mode, step: 'input', vals: {} };
   const p = $('#orderpanel');
   if (locked()) { p.innerHTML = `<div class="msg warn">${S.me.account.status !== 'active' ? 'この口座では注文できません。' : '一時停止中のため注文できません。'}</div>`; return; }
-  if (S.auto) { p.innerHTML = '<div class="msg warn">自動進行中は注文できません。ホームで「停止」してから操作してください。</div>'; return; }
+  if (S.auto) { p.innerHTML = '<div class="msg warn">自動進行中は注文できません。ホームで止めてから操作してください。</div>'; return; }
   if (mode === 'plan') return planPanel(d, p);
   const isFund = d.type === 'fund', side = mode, buy = side === 'buy';
-  const unit = isFund ? '円' : '株'; const lot = d.terms.lot_size || 1;
+  const lot = d.terms.lot_size || 1;
   const field = isFund && buy ? 'amount' : 'qty';
-  if (isFund && buy && d.terms.spot_buy_ok === false) { p.innerHTML = '<div class="msg info">この商品は積立（定時定額）でのみ購入できます。「積立」から設定してください。</div>'; return; }
-  const label = isFund && buy ? `購入金額（円・${d.terms.amount_step.toLocaleString('ja-JP')}円単位、最低${d.terms.min_amount.toLocaleString('ja-JP')}円）` : isFund ? '売却口数' : `${buy ? '購入' : '売却'}株数（${lot}株単位）`;
+  if (isFund && buy && d.terms.spot_buy_ok === false) { p.innerHTML = '<div class="msg">この商品は積立（定時定額）でのみ購入できます。「積立」から設定してください。</div>'; return; }
+  const label = isFund && buy ? `いくら買いますか（${num(d.terms.min_amount)}円以上・${num(d.terms.amount_step)}円単位）` : isFund ? '何口売りますか' : `何株${buy ? '買い' : '売り'}ますか（${lot}株単位）`;
   const saved = ord.vals[field] ?? '';
   if (ord.step === 'result') return orderResult(d, p);
   if (ord.step === 'confirm') return orderConfirm(d, p, side, field);
-  p.innerHTML = `<div class="card"><div class="steps"><b>① 入力</b> → ② 内容確認 → ③ 受付結果</div>
-  <label for="oval">${esc(label)}</label><input id="oval" inputmode="numeric" autocomplete="off" value="${esc(saved)}">
-  ${!buy ? `<div class="sub">売却可能: ${(d.sellable || 0).toLocaleString('ja-JP')}${isFund ? '口' : '株'}${d.holding && d.holding.unsettled_qty > 0 ? `（ほかに受渡前の買付分 ${d.holding.unsettled_qty.toLocaleString('ja-JP')}${isFund ? '口' : '株'}は受渡日まで売れません）` : ''}</div>${d.sellable ? `<label style="font-weight:400"><input type="checkbox" id="sellall" style="width:auto;min-height:0" ${ord.vals.sell_all ? 'checked' : ''}> 全売却（端数も含めすべて）</label>` : ''}` : ''}
-  <div id="prev" aria-live="polite"></div><div class="btns"><button class="btn pri" id="tocf" disabled>内容を確認する</button></div>
-  <div class="sub">買付可能額: ${yen(d.available)}（未受渡の売却代金は含みません）。${isFund ? `注文した日の${d.terms.nav_offset}営業日後の基準価額で約定します。` : '成行注文: 日付の終わりに注文し、次の営業日の始値で約定します。'}</div></div>`;
+  p.innerHTML = `<div class="card">${orderSteps(1)}
+  <label for="oval">${esc(label)}</label><div class="${isFund && buy ? 'yenin' : ''}"><input id="oval" inputmode="numeric" autocomplete="off" value="${esc(saved)}"></div>
+  ${buy ? `<p class="fine">使えるお金: ${yen(d.available)}</p>` : `<p class="fine">売れる数量: ${num(d.sellable || 0)}${isFund ? '口' : '株'}${d.holding && d.holding.unsettled_qty > 0 ? `（ほかに受渡前の買付分 ${num(d.holding.unsettled_qty)}${isFund ? '口' : '株'}は受渡日まで売れません）` : ''}</p>${d.sellable ? `<label style="font-weight:600"><input type="checkbox" id="sellall" ${ord.vals.sell_all ? 'checked' : ''}>すべて売る</label>` : ''}`}
+  <div id="prev" aria-live="polite"></div><div class="stack"><button class="btn pri" id="tocf" disabled>内容を確認する</button></div></div>`;
   const inp = $('#oval'); const all = $('#sellall'); let tmr;
   const run = async () => {
     const raw = inp.value.trim().replace(/,/g, ''); ord.vals[field] = inp.value; ord.vals.sell_all = !!all?.checked;
-    if (all?.checked) inp.disabled = true; else inp.disabled = false;
+    inp.disabled = !!all?.checked;
     $('#tocf').disabled = true;
     if (!all?.checked && !raw) { $('#prev').innerHTML = ''; return; }
     if (!all?.checked && !/^\d+$/.test(raw)) { $('#prev').innerHTML = '<div class="msg err">⚠ 半角の整数で入力してください</div>'; return; }
@@ -321,20 +403,19 @@ function openOrder(d, mode, keep) {
 function previewHtml(i, d) {
   const isFund = d.type === 'fund'; const rows = [];
   if (i.side === 'buy') {
-    if (isFund) rows.push(['購入金額（手数料込み）', yen(i.amount)], ['うち購入時手数料（見込み）', yen(i.fee_estimate)], ['注文中に確保する金額', yen(i.reserve)]);
-    else rows.push(['株数', i.qty.toLocaleString('ja-JP') + '株'], ['参考金額（現在の終値 × 株数）', yen(i.reference_amount)], ['注文中に確保する金額（値上がりに備えた余裕を含む）', yen(i.reserve)], ['手数料（見込み）', yen(i.fee_estimate)]);
-    rows.push(['買付可能額', yen(i.available)]);
-  } else rows.push([isFund ? '売却口数' : '売却株数', i.qty.toLocaleString('ja-JP') + (isFund ? '口' : '株')], ['売却可能数量', i.sellable.toLocaleString('ja-JP') + (isFund ? '口' : '株')]);
+    if (isFund) rows.push(['購入金額（手数料込み）', yen(i.amount)], ['うち購入時手数料（見込み）', yen(i.fee_estimate)]);
+    else rows.push(['株数', num(i.qty) + '株'], ['参考金額（現在の終値 × 株数）', yen(i.reference_amount)], ['注文中に確保する金額（値上がりに備えた余裕を含む）', yen(i.reserve)], ['手数料（見込み）', yen(i.fee_estimate)]);
+  } else rows.push([isFund ? '売却口数' : '売却株数', num(i.qty) + (isFund ? '口' : '株')]);
   const sd = i.settle_date === '9999-12-31' ? '期間外（期間内には受渡されません）' : jdate(i.settle_date);
-  rows.push(['注文の締切・取消期限', jdate(i.cancel_deadline) + 'の終わり（日付を進めるまで）'], ['約定予定日', jdate(i.exec_date) + (isFund ? '（この日の基準価額）' : '（この日の始値）')],
-    i.side === 'sell' ? ['売却代金の受渡予定日', sd + '（それまで買付に使えません）'] : ['受渡予定日（代金支払・売却可能になる日）', sd]);
+  rows.push(['成立する予定の日', jdate(i.exec_date) + (isFund ? '（この日の基準価額）' : '（この日の始値）')],
+    i.side === 'sell' ? ['代金を受け取る日', sd + '（それまで買付に使えません）'] : ['受渡の予定日（売れるようになる日）', sd], ['取消できる期限', '日付を進める前まで']);
   return `<table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td class="n">${esc(v)}</td></tr>`).join('')}</table>`;
 }
 function orderConfirm(d, p) {
   const i = ord.preview.info;
-  p.innerHTML = `<div class="card"><div class="steps">① 入力 → <b>② 内容確認</b> → ③ 受付結果</div><h3>${esc(d.name)} を${i.side === 'buy' ? '買う' : '売る'}</h3>${previewHtml(i, d)}
-  <div class="msg warn">価格は約定日まで決まりません。${i.side === 'buy' ? '成行買いでは、確保額を超えて値上がりした場合は成立せず失効します。' : ''}注文の取消は、シミュレーション上の日付を進める前までできます。</div>
-  <div id="ordmsg"></div><div class="btns"><button class="btn" id="back">戻る</button><button class="btn pri" id="submit">この内容で注文する</button></div></div>`;
+  p.innerHTML = `<div class="card">${orderSteps(2)}<h3>${esc(d.name)} を${i.side === 'buy' ? '買う' : '売る'}</h3>${previewHtml(i, d)}
+  <p class="fine">価格は成立する日まで決まりません。${i.side === 'buy' && d.type !== 'fund' ? '成行買いでは、確保額を超えて値上がりした場合は成立せず失効します。' : ''}</p>
+  <div id="ordmsg"></div><div class="stack"><button class="btn pri" id="submit">この内容で注文する</button><button class="btn quiet" id="back">戻る</button></div></div>`;
   // onclick（代入）で設定し、状態に応じて置き換える。addEventListener だと古い送信処理が残り二重送信になる
   $('#back').onclick = () => { ord.step = 'input'; openOrder(d, ord.mode, true); };
   $('#submit').onclick = () => submitOrder(d, p);
@@ -360,84 +441,106 @@ async function checkPending(d, p) {
   const q = await lookup(ord.pending.body.request_id);
   if (q === null) { $('#ordmsg').innerHTML = '<div class="msg warn">まだ通信できません。電波の良い場所で、もう一度「受付状況を確認」を押してください。</div>'; $('#submit').disabled = false; return; }
   if (q.found) { ord.result = q.response; ord.step = 'result'; ord.pending = null; await refresh(); return orderResult(d, p); }
-  $('#ordmsg').innerHTML = '<div class="msg info">この注文は<b>受け付けられていません</b>。同じ内容でもう一度送信できます。</div>';
+  $('#ordmsg').innerHTML = '<div class="msg">この注文は<b>受け付けられていません</b>。同じ内容でもう一度送信できます。</div>';
   $('#submit').textContent = '同じ内容で送信する'; $('#submit').disabled = false; $('#submit').onclick = () => { $('#submit').disabled = true; sendPending(d, p); };
 }
 function orderResult(d, p) {
-  const i = ord.result.info; p.innerHTML = `<div class="card"><div class="steps">① 入力 → ② 内容確認 → <b>③ 受付結果</b></div><div class="msg ok"><b>${esc(ord.result.message)}</b>${ord.result.replayed ? '（同じ注文の結果を確認しました）' : ''}</div>
-  <p>状態: ${tagFor('accepted')}（まだ成立していません）　約定予定日 ${jdate(i.exec_date)}。受渡予定日 ${i.settle_date === '9999-12-31' ? '期間外' : jdate(i.settle_date)}。<br>取消できるのは、シミュレーション上の日付を進める前までです。進めると、約定・失効の結果が「注文」に表示されます。</p>
-  <div class="btns"><a class="btn" href="#/orders">注文を見る</a><button class="btn" id="again">続けて別の注文</button></div></div>`;
+  const i = ord.result.info; p.innerHTML = `<div class="card">${orderSteps(3)}<div class="msg ok"><b>${esc(ord.result.message)}</b>${ord.result.replayed ? '（同じ注文の結果を確認しました）' : ''}</div>
+  <p>まだ成立していません。<b>${jdate(i.exec_date)}</b> の価格で成立する予定です。ホームで日付を進めてください。</p>
+  <div class="stack"><a class="btn pri" href="#/home">ホームで時間を進める</a><button class="btn quiet" id="again">続けて別の注文をする</button></div></div>`;
   $('#again').addEventListener('click', () => { ord = null; viewInstrument(d.id); });
 }
 function planPanel(d, p) {
   const t = { ...d.terms, min_amount: d.terms.savings_min_amount ?? d.terms.min_amount, amount_step: d.terms.savings_amount_step ?? d.terms.amount_step }; const pl = d.plan;
   if (pl) {
-    p.innerHTML = `<div class="card"><h3 style="margin-top:0">積立の設定${Q('plan')}</h3><div>毎月 ${pl.day_of_month}日以降の最初の営業日 ／ ${yen(pl.amount)} ／ 状態: <b>${pl.status === 'active' ? '有効' : '休止中'}</b></div>
-    <div class="sub">金額変更・休止・再開・解除は、次回以降の注文から反映されます（すでに出された注文は変わりません）。</div>
-    <label for="pamt">積立額を変更（円）</label><input id="pamt" inputmode="numeric" value="${pl.amount}"><div id="pmsg"></div>
-    <div class="btns"><button class="btn pri" id="pchg">金額を変更</button>${pl.status === 'active' ? '<button class="btn" id="ppause">休止</button>' : '<button class="btn" id="presume">再開</button>'}<button class="btn danger" id="pcancel">解除</button></div></div>`;
+    p.innerHTML = `<div class="card"><h3 style="margin-top:0">積立の設定 ${Q('plan')}</h3><p>毎月 ${pl.day_of_month}日以降の最初の営業日に ${yen(pl.amount)} ／ <b>${pl.status === 'active' ? '有効' : '休止中'}</b></p>
+    <label for="pamt">積立額を変える</label><div class="yenin"><input id="pamt" inputmode="numeric" value="${pl.amount}"></div><p class="fine">変更・休止・再開・解除は、次回以降の注文から反映されます。</p><div id="pmsg"></div>
+    <div class="stack"><button class="btn pri" id="pchg">金額を変更する</button>${pl.status === 'active' ? '<button class="btn quiet" id="ppause">休止する</button>' : '<button class="btn" id="presume">再開する</button>'}<button class="btn danger" id="pcancel">解除する</button></div></div>`;
     const act = async (body, msg) => { try { await doPost('/api/plans/' + pl.id, body); toast(msg); await refresh(); viewInstrument(d.id); } catch (e) { if (!e.ended) $('#pmsg').innerHTML = `<div class="msg err">⚠ ${esc(e.message)}</div>`; } };
     $('#pchg').onclick = () => act({ action: 'amount', amount: Number($('#pamt').value.replace(/,/g, '')) }, '積立額を変更しました（次回の注文から）');
     $('#ppause')?.addEventListener('click', () => act({ action: 'pause' }, '休止しました')); $('#presume')?.addEventListener('click', () => act({ action: 'resume' }, '再開しました'));
     $('#pcancel').onclick = () => { if (confirm('この積立を解除します。よろしいですか？')) act({ action: 'cancel' }, '解除しました'); };
     return;
   }
-  p.innerHTML = `<div class="card"><h3 style="margin-top:0">積立を設定${Q('plan')}</h3><div class="steps"><b>① 入力</b> → ② 確認 → ③ 結果</div>
-  <label for="pamt">毎月の積立額（円・${t.amount_step.toLocaleString('ja-JP')}円単位、最低${t.min_amount.toLocaleString('ja-JP')}円）</label><input id="pamt" inputmode="numeric">
-  <label for="pdom">積立日（毎月 1〜28日。休日の場合は次の営業日）</label><input id="pdom" inputmode="numeric" value="5"><div id="pmsg"></div>
-  <div class="btns"><button class="btn pri" id="pgo">内容を確認する</button></div>
-  <div class="sub">資金が足りない月は見送られ、自動進行は停止します。注文は日付が進んだ時点で出され、その${d.terms.nav_offset}営業日後の基準価額で約定します。</div></div>`;
+  p.innerHTML = `<div class="card">${orderSteps(1)}
+  <label for="pamt">毎月いくら積み立てますか（${num(t.min_amount)}円以上・${num(t.amount_step)}円単位）</label><div class="yenin"><input id="pamt" inputmode="numeric" autocomplete="off"></div>
+  <label for="pdom">毎月何日に買いますか（1〜28。休みの日は次の営業日）</label><input id="pdom" inputmode="numeric" value="5"><div id="pmsg"></div>
+  <p class="fine">使えるお金が足りない月は見送られます。${Q('plan')}</p>
+  <div class="stack"><button class="btn pri" id="pgo">内容を確認する</button></div></div>`;
   $('#pgo').onclick = () => {
     const amount = Number($('#pamt').value.replace(/,/g, '')), dom = Number($('#pdom').value);
     if (!Number.isInteger(amount) || amount < t.min_amount || amount % t.amount_step) return void ($('#pmsg').innerHTML = `<div class="msg err">⚠ 積立額は ${yen(t.min_amount)}以上、${yen(t.amount_step)}単位で入力してください</div>`);
     if (!Number.isInteger(dom) || dom < 1 || dom > 28) return void ($('#pmsg').innerHTML = '<div class="msg err">⚠ 積立日は1〜28の整数で入力してください</div>');
-    const day = Number(S.me.account.sim_date.slice(8, 10)); const ym = S.me.account.sim_date.slice(0, 7); const first = day < dom ? ym : (() => { let [Y, M] = ym.split('-').map(Number); M++; if (M > 12) { M = 1; Y++; } return `${Y}年${M}月`; })();
-    p.innerHTML = `<div class="card"><div class="steps">① 入力 → <b>② 確認</b> → ③ 結果</div><h3>${esc(d.name)} の積立</h3><table><tr><th>毎月の金額</th><td class="n">${yen(amount)}</td></tr><tr><th>積立日</th><td class="n">毎月${dom}日以降の最初の営業日</td></tr><tr><th>最初の注文</th><td class="n">${esc(first.includes('-') ? jdate(first + '-01').replace(/1日$/, '') : first)}（日付がその日に進んだとき）</td></tr></table><div id="pmsg"></div><div class="btns"><button class="btn" id="pback">戻る</button><button class="btn pri" id="pok">この内容で設定する</button></div></div>`;
+    const day = Number(S.me.account.sim_date.slice(8, 10)); const ym = S.me.account.sim_date.slice(0, 7); let [Y, M] = ym.split('-').map(Number); if (day >= dom) { M++; if (M > 12) { M = 1; Y++; } }
+    p.innerHTML = `<div class="card">${orderSteps(2)}<h3>${esc(d.name)} の積立</h3><table><tr><th>毎月の金額</th><td class="n">${yen(amount)}</td></tr><tr><th>買う日</th><td class="n">毎月${dom}日以降の最初の営業日</td></tr><tr><th>最初の注文</th><td class="n">${Y}年${M}月</td></tr><tr><th>適用される価格</th><td class="n">注文の${d.terms.nav_offset}営業日後の基準価額</td></tr></table><div id="pmsg"></div><div class="stack"><button class="btn pri" id="pok">この内容で設定する</button><button class="btn quiet" id="pback">戻る</button></div></div>`;
     $('#pback').onclick = () => planPanel(d, p);
-    $('#pok').onclick = async () => { $('#pok').disabled = true; try { await doPost('/api/plans', { instrument_id: d.id, amount, day_of_month: dom }); toast('積立を設定しました'); await refresh(); viewInstrument(d.id); } catch (e) { if (e.unknown) $('#pmsg').innerHTML = '<div class="msg warn">結果が未確認です。画面を更新して設定を確認してください。重複して設定されることはありません。</div>'; else if (!e.ended) { $('#pmsg').innerHTML = `<div class="msg err">⚠ ${esc(e.message)}</div>`; $('#pok').disabled = false; } } };
+    $('#pok').onclick = async () => { $('#pok').disabled = true; try { await doPost('/api/plans', { instrument_id: d.id, amount, day_of_month: dom }); await refresh();
+      p.innerHTML = `<div class="card">${orderSteps(3)}<div class="msg ok"><b>積立を設定しました</b></div><p>日付が進むと、毎月自動で注文が出ます。</p><div class="stack"><a class="btn pri" href="#/home">ホームで時間を進める</a></div></div>`;
+    } catch (e) { if (e.unknown) $('#pmsg').innerHTML = '<div class="msg warn">結果が未確認です。画面を更新して設定を確認してください。重複して設定されることはありません。</div>'; else if (!e.ended) { $('#pmsg').innerHTML = `<div class="msg err">⚠ ${esc(e.message)}</div>`; $('#pok').disabled = false; } } };
   };
 }
 
-// ---------- 注文・履歴・比較・ニュース・その他 ----------
-async function viewOrders() {
-  const h = await api('GET', '/api/history'); const cur = S.me.account.sim_date; const m = S.me;
-  const open = h.orders.filter((o) => o.status === 'accepted'), done = h.orders.filter((o) => o.status !== 'accepted');
-  $('#view').innerHTML = `<h1>注文</h1><h2>受付済み</h2>${open.length ? open.map((o) => orderLine(o, !locked(), cur)).join('') : '<div class="msg info">受付済みの注文はありません。</div>'}
-  <h2>積立</h2>${m.plans.length ? m.plans.map((p) => `<div class="card"><b>${esc(p.name)}</b> ${yen(p.amount)} 毎月${p.day_of_month}日以降の最初の営業日 ${p.status === 'active' ? '<span class="tag acc">有効</span>' : '<span class="tag cx">休止中</span>'}<br><a href="#/i/${esc(p.instrument_id)}">変更・休止・解除</a></div>`).join('') : '<div class="msg info">積立の設定はありません。投資信託の詳細から設定できます。</div>'}
-  <h2>成立・取消・失効</h2>${done.length ? done.slice(0, 50).map((o) => orderLine(o, false, cur)).join('') : '<div class="msg info">まだありません。</div>'}`;
-  bindCancel(viewOrders);
-}
+// ---------- 記録（注文・お金の動き）・比較・できごと・メニュー ----------
 const LTYPE = { deposit: '入金', buy: '買付（約定）', sell: '売却（約定）', fee: '手数料等（約定）', purchase_settlement: '買付代金の支払（受渡）', sale_settlement: '売却代金の受取（受渡）', dividend: '配当・分配金（税引前）', split_fraction: '端数株の処分代金' };
 const NONCASH = new Set(['buy', 'sell', 'fee']);
-async function viewHistory() {
-  const h = await api('GET', '/api/history'); const att = S.me.account.attempt;
-  $('#view').innerHTML = `<h1>履歴</h1><div class="btns"><a class="btn" href="#/compare">試行の比較</a></div>
-  <h2>お金・数量の動き</h2><div class="card"><table><tr><th>日付</th><th>種別</th><th class="n">金額</th></tr>${h.ledger.slice(0, 200).map((l) => `<tr><td>${esc(l.date)}</td><td>${esc(LTYPE[l.type] || l.type)}${l.name ? '<br><span class="sub">' + esc(l.name) + (l.qty ? ' ' + l.qty.toLocaleString('ja-JP') : '') + '</span>' : ''}${l.note ? '<br><span class="sub">' + esc(l.note) + '</span>' : ''}</td><td class="n">${NONCASH.has(l.type) ? '(' + signYen(l.amount) + ')' : signYen(l.amount)}</td></tr>`).join('')}</table><div class="sub">括弧内は約定の記録で、現金は受渡日に動きます（「受渡」の行が現金の増減です）。</div></div>
-  <h2>注文の履歴</h2>${h.orders.slice(0, 100).map((o) => orderLine(o, false, S.me.account.sim_date)).join('') || '<div class="msg info">まだありません。</div>'}
-  ${att > 1 ? `<h2>過去の試行（閲覧専用）</h2>${Array.from({ length: att - 1 }, (_, k) => `<button class="btn" data-att="${k + 1}">${k + 1}回目を見る</button>`).join(' ')}<div id="attbox"></div>` : ''}`;
-  document.querySelectorAll('[data-att]').forEach((b) => b.addEventListener('click', async () => { const r = await api('GET', '/api/history?attempt=' + b.dataset.att); $('#attbox').innerHTML = `<h3>${b.dataset.att}回目（閲覧専用）</h3>` + r.orders.map((o) => orderLine(o, false, '')).join(''); }));
+async function viewRecords(_arg, name) {
+  const tab = name === 'history' ? 'money' : 'orders';
+  const h = await api('GET', '/api/history'); const cur = S.me.account.sim_date; const m = S.me; const att = m.account.attempt;
+  const open = h.orders.filter((o) => o.status === 'accepted'), done = h.orders.filter((o) => o.status !== 'accepted');
+  const seg = `<div class="seg" role="group" aria-label="表示の切り替え"><button data-go="#/orders" class="${tab === 'orders' ? 'on' : ''}">注文と積立</button><button data-go="#/history" class="${tab === 'money' ? 'on' : ''}">お金の動き</button></div>`;
+  const body = tab === 'orders' ? `
+  <section class="blk"><h2>受付済みの注文</h2>${open.length ? `<div class="rows">${open.map((o) => orderLine(o, !locked(), cur)).join('')}</div>` : '<p class="sub">ありません。</p>'}</section>
+  <section class="blk"><h2>積立</h2>${m.plans.length ? `<div class="rows">${m.plans.map((p) => `<a class="row" href="#/i/${esc(p.instrument_id)}"><div class="grow"><div class="nm">${esc(p.name)}</div><div class="fine">毎月${p.day_of_month}日以降の最初の営業日 ／ ${p.status === 'active' ? '有効' : '休止中'}</div></div><div class="r"><b>${yen(p.amount)}</b></div></a>`).join('')}</div>` : '<p class="sub">ありません。投資信託の画面から設定できます。</p>'}</section>
+  <section class="blk"><h2>成立・取消・失効</h2>${done.length ? `<div class="rows">${done.slice(0, 60).map((o) => orderLine(o, false, cur)).join('')}</div>` : '<p class="sub">まだありません。</p>'}</section>` : `
+  <section class="blk"><h2>お金・数量の動き</h2>${h.ledger.length ? `<table><tr><th>日付</th><th>内容</th><th class="n">金額</th></tr>${h.ledger.slice(0, 200).map((l) => `<tr><td>${esc(l.date)}</td><td>${esc(LTYPE[l.type] || l.type)}${l.name ? '<br><span class="fine">' + esc(l.name) + (l.qty ? ' ' + num(l.qty) : '') + '</span>' : ''}</td><td class="n">${NONCASH.has(l.type) ? '(' + signYen(l.amount) + ')' : signYen(l.amount)}</td></tr>`).join('')}</table><p class="fine">括弧内は約定の記録で、現金は受渡日に動きます（「受渡」の行が現金の増減です）。</p>` : '<p class="sub">まだありません。</p>'}</section>`;
+  $('#view').innerHTML = `<h1>記録</h1>${seg}${body}
+  <section class="blk"><h2>試行の比較</h2><p class="sub">やり直した回がある場合、同じ日付の時点で並べて見られます。</p><div class="stack"><a class="btn quiet" href="#/compare">試行を比べる</a></div>
+  ${att > 1 ? `<p class="fine" style="margin-top:14px">過去の試行の注文（閲覧専用）</p><div class="chips">${Array.from({ length: att - 1 }, (_, k) => `<button class="chip" data-att="${k + 1}">${k + 1}回目</button>`).join('')}</div><div id="attbox"></div>` : ''}</section>`;
+  document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => { location.hash = b.dataset.go; }));
+  document.querySelectorAll('[data-att]').forEach((b) => b.addEventListener('click', async () => { const r = await api('GET', '/api/history?attempt=' + b.dataset.att); $('#attbox').innerHTML = `<h3>${b.dataset.att}回目（閲覧専用）</h3><div class="rows">${r.orders.map((o) => orderLine(o, false, '')).join('') || '<p class="sub">注文はありません。</p>'}</div>`; }));
+  bindCancel(() => viewRecords(_arg, name));
 }
 async function viewCompare() {
   const c = await api('GET', '/api/compare');
-  $('#view').innerHTML = `<p><a href="#/history">← 履歴へ</a></p><h1>試行の比較</h1><div class="msg info">${esc(c.note)} 同じ初期条件（初期資金 ${yen(c.conditions.initial_cash)}、毎月の追加資金 ${yen(c.conditions.monthly_deposit)}）で、<b>${jdate(c.common_date)}</b> 時点の値を並べています。</div>
-  ${c.rows.length < 2 ? '<div class="msg info">比較するには、「その他」から結果を保存して、同じ条件でやり直してください。</div>' : ''}
-  <div class="card"><table><tr><th>試行</th><th class="n">総資産</th><th class="n">入金累計</th><th class="n">損益（税引前）</th></tr>${c.rows.map((r) => `<tr><td>${r.attempt}回目${r.attempt === 1 ? '（初回）' : '（再試行）'}</td><td class="n">${yen(r.at_common?.total)}</td><td class="n">${yen(r.at_common?.deposits)}</td><td class="n">${r.at_common ? plLabel(r.at_common.total - r.at_common.deposits) : '-'}</td></tr>`).join('')}</table></div>
-  <div class="card">${chart(c.rows[c.rows.length - 1].series.map((s) => [s.date, s.total]), { label: '最新の試行の総資産' })}</div>
-  ${c.rows.map((r) => `<div class="card"><b>${r.attempt}回目</b>（実際の進行日: ${jdate(r.sim_date)}）<br>約定 ${r.trades}件 ／ 手数料等の合計 ${yen(r.fees)}<br>保有: ${r.holdings.map((x) => esc(x.name) + ' ' + yen(x.value)).join('、') || 'なし'}</div>`).join('')}`;
+  $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/orders">‹ 記録へ戻る</a></p><h1>試行を比べる</h1><p class="sub">${esc(c.note)}</p>
+  <p class="fine"><b>${jdate(c.common_date)}</b> 時点の値を並べています。</p>
+  ${c.rows.length < 2 ? '<div class="msg">比べるには、「メニュー」からやり直して2回目を進めてください。</div>' : ''}
+  <table><tr><th>試行</th><th class="n">総資産</th><th class="n">入金した合計</th><th class="n">損益（税引前）</th></tr>${c.rows.map((r) => `<tr><td>${r.attempt}回目${r.attempt === 1 ? '（初回）' : '（再試行）'}<br><span class="fine">最初 ${yen(r.conditions.initial_cash)}・毎月 ${yen(r.conditions.monthly_deposit)}</span></td><td class="n">${yen(r.at_common?.total)}</td><td class="n">${yen(r.at_common?.deposits)}</td><td class="n">${r.at_common ? plLabel(r.at_common.total - r.at_common.deposits) : '-'}</td></tr>`).join('')}</table>
+  <section class="blk"><h2>最新の試行の総資産の動き</h2>${chart(c.rows[c.rows.length - 1].series.map((s) => [s.date, s.total]), { label: '最新の試行の総資産' })}</section>
+  <section class="blk"><h2>各試行の内容</h2><div class="rows">${c.rows.map((r) => `<div class="row" style="display:block"><div class="nm">${r.attempt}回目</div><div class="fine">進めた日付 ${jdate(r.sim_date)} ／ 成立 ${r.trades}件 ／ 手数料等の合計 ${yen(r.fees)}</div><div class="fine">保有: ${r.holdings.map((x) => esc(x.name) + ' ' + yen(x.value)).join('、') || 'なし'}</div></div>`).join('')}</div></section>`;
 }
 async function viewNews() {
-  $('#view').innerHTML = `<p><a href="#/home">← ホームへ</a></p><h1>これまでのイベント</h1><p class="sub">当時すでに公表されていたものだけを表示します。出典の記事は外部サイトです。</p>${newsList(S.me.news)}`;
+  $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/home">‹ ホームへ戻る</a></p><h1>これまでのできごと</h1><p class="sub">その日までに公表されていたものだけを表示します。出典の記事は外部サイトです。</p>${newsList(S.me.news)}`;
 }
 async function viewMore() {
-  const m = S.me;
-  $('#view').innerHTML = `<h1>その他</h1><h2>注意事項</h2>${discHtml()}
-  <h2>このシミュレーターで再現していること</h2><ul><li>${m.event.data.kind === 'dev_test' ? '開発用の架空データ' : '出典を確認した過去の実データ（基準価額・価格、分配金・配当、分割）'}。期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.event.period.end)}。仮定の利回り・乱数・予測による価格は使っていません</li><li>投資信託は金額指定の購入・売却・積立。株式・ETF（データに含まれる場合）は成行のみ・翌営業日の始値で約定</li><li>購入単位・手数料・信託財産留保額・受渡日（商品条件。現在の条件を過去の期間に適用）</li></ul>
-  <h2>データの出典</h2><ul>${m.event.data.sources.map((s) => `<li>${esc(s.name)}（取得日 ${esc(s.retrieved_at)}）</li>`).join('') || '<li>-</li>'}</ul>
-  <h2>用語</h2>${Object.keys(TERMS).map((k) => `<details><summary>${esc(TERMS[k][0])}</summary><p>${esc(TERMS[k][1])}</p></details>`).join('')}
-  <h2>設定</h2><div class="card">初期資金 ${yen(m.event.initial_cash)} ／ 毎月の追加資金 ${yen(m.event.monthly_deposit)} ${Object.values(m.event.provisional || {}).some(Boolean) ? '<span class="tag prov">仮設定</span>' : ''}<div class="sub">版: アプリ ${esc(m.event.app_version)} ／ 計算仕様 ${esc(m.event.calc_spec_version)}</div></div>
-  <h2>同じ条件でやり直す</h2><div class="card"><p>今回の結果は保存され、閲覧専用として残ります。初期資金・毎月の追加資金・期間は同じまま、${m.account.attempt + 1}回目を始めます。</p><div id="rsmsg"></div><button class="btn" id="restart" ${m.event.status === 'paused' ? 'disabled' : ''}>結果を保存してやり直す</button></div>
-  <h2>データの扱い</h2><p class="sub">氏名・メールアドレスなどは取得しません。参加データは説明会終了の ${m.event.retention_hours} 時間後に自動削除されます。端末に残った画面表示（スクリーンショット等）は回収できません。</p>`;
-  $('#restart').addEventListener('click', async () => { if (!confirm('結果を保存して、最初からやり直します。よろしいですか？')) return; try { const r = await doPost('/api/restart', {}); S.stop = null; S.last = []; toast(r.message); location.hash = '#/home'; route(); } catch (e) { if (!e.ended) $('#rsmsg').innerHTML = `<div class="msg err">${esc(e.message)}${e.unknown ? '（結果が未確認です。履歴で確認してください）' : ''}</div>`; } });
+  const m = S.me; let prof = null; try { prof = JSON.parse(ls.get(PROFILE_KEY) || 'null'); } catch { /* noop */ }
+  const end = new Date(m.event.ends_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const L = m.event.funds_limits;
+  $('#view').innerHTML = `<h1>メニュー</h1>
+  <section class="blk"><h2>いまの条件</h2><dl class="pair" style="border-top:0;margin-top:0"><div><dt>最初の金額</dt><dd>${yen(m.event.initial_cash)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(m.event.monthly_deposit)}</dd></div></dl>
+    ${prof && (prof.grade || prof.income != null) ? `<p class="fine">はじめの回答（この端末の中だけに保存）: ${[prof.grade, prof.income != null ? `収入 ${yen(prof.income)}` : null, prof.expense != null ? `支出 ${yen(prof.expense)}` : null].filter(Boolean).map(esc).join(' ／ ')}</p>` : ''}
+    <p class="fine">説明会の終了予定（実際の時刻）: ${esc(end)}。${Object.values(m.event.provisional || {}).some(Boolean) ? '一部の設定は仮設定です。' : ''}</p></section>
+  <section class="blk"><h2>やり直す</h2><p class="sub">いまの結果は保存され、閲覧専用で残ります。${m.account.attempt + 1}回目を最初の日付から始めます。</p>
+    <label for="r-init">最初の金額</label><div class="yenin"><input id="r-init" inputmode="numeric" value="${num(m.event.initial_cash)}"></div>
+    <label for="r-mon">毎月入ってくる金額</label><div class="yenin"><input id="r-mon" inputmode="numeric" value="${num(m.event.monthly_deposit)}"></div>
+    <p class="fine">金額を変えなければ、同じ条件でのやり直しになります。最初 0〜${yen(L.initial_max)}、毎月 0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>
+    <div id="rsmsg"></div><div class="stack"><button class="btn" id="restart" ${m.event.status === 'paused' ? 'disabled' : ''}>結果を保存してやり直す</button></div></section>
+  <section class="blk"><h2>使い方</h2><div class="stack"><a class="btn quiet" href="#/guide">使い方をもう一度見る</a></div></section>
+  <section class="blk" style="padding-bottom:0"><h2>このシミュレーターについて</h2>
+    <details><summary>ご利用上の注意</summary><div class="in">${discHtml()}</div></details>
+    <details><summary>再現していること・データの出典</summary><div class="in"><ul><li>${m.event.data.kind === 'dev_test' ? '開発用の架空データ' : '出典を確認した過去の実データ（基準価額・価格、分配金・配当、分割）'}。期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.event.period.end)}。仮定の利回り・乱数・予測による価格は使っていません</li><li>投資信託は金額指定の購入・売却・積立。株式・ETF（データに含まれる場合）は成行のみ・翌営業日の始値で約定</li><li>購入単位・手数料・信託財産留保額・受渡日（商品条件。現在の条件を過去の期間に適用）</li></ul>
+      <p class="fine">出典: ${m.event.data.sources.map((s) => `${esc(s.name)}（取得日 ${esc(s.retrieved_at)}）`).join('／') || '-'}</p></div></details>
+    <details><summary>用語</summary><div class="in">${Object.keys(TERMS).map((k) => `<p><b>${esc(TERMS[k][0])}</b><br><span class="sub">${esc(TERMS[k][1])}</span></p>`).join('')}</div></details>
+    <details><summary>データの扱い</summary><div class="in"><p class="sub">氏名・メールアドレスなどは取得しません。はじめの質問への回答はこの端末の中だけで使い、サーバーには2つの金額だけを送ります。参加データは説明会終了の ${m.event.retention_hours} 時間後に自動削除されます。端末に残った画面表示（スクリーンショット等）は回収できません。</p><p class="fine">版: アプリ ${esc(m.event.app_version)} ／ 計算仕様 ${esc(m.event.calc_spec_version)}</p></div></details>
+  </section>`;
+  $('#restart').addEventListener('click', async () => {
+    const rd = (id) => { const raw = $('#' + id).value.replace(/[,\s円]/g, ''); return /^\d+$/.test(raw) ? Number(raw) : NaN; };
+    const ic = rd('r-init'), md = rd('r-mon'); const msg = (t) => { $('#rsmsg').innerHTML = `<div class="msg err">⚠ ${esc(t)}</div>`; };
+    if (Number.isNaN(ic) || Number.isNaN(md)) return msg('金額は半角の数字で入力してください');
+    const same = ic === m.event.initial_cash && md === m.event.monthly_deposit;
+    if (!confirm(`結果を保存して、最初からやり直します（${same ? '同じ条件' : `最初 ${yen(ic)}・毎月 ${yen(md)}`}）。よろしいですか？`)) return;
+    try { const r = await doPost('/api/restart', same ? {} : { initial_cash: ic, monthly_deposit: md }); S.stop = null; S.last = []; toast(r.message); location.hash = '#/home'; route(); } catch (e) { if (!e.ended) msg(e.message + (e.unknown ? '（結果が未確認です。記録で確認してください）' : '')); }
+  });
 }
 
 route();
