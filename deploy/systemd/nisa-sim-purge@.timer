@@ -1,0 +1,10 @@
+# 有効化: systemctl enable --now nisa-sim-purge@prod.timer
+[Unit]
+Description=nisa-sim purge timer (%i)
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+# 秘密情報・実行時データ
+.env*
+!.env.example
+data-*/
+*.sqlite*
+node_modules/
+
+# トンネルの実行ファイル・この端末固有の設定
+ops/bin/
+ops/cloudflared-staging.yml
+
+# 利用許諾が未確認の市場データ（元ファイルと生成物）。台帳 market-data/catalog.json の取得元URLから取得し、SHA-256 を照合する
+market-data/raw/
+market-data/build/

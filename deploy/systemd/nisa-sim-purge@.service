@@ -1,0 +1,13 @@
+# アプリが停止していても期限どおりに削除するための単独実行（timer から起動）
+[Unit]
+Description=nisa-sim purge (%i)
+
+[Service]
+Type=oneshot
+User=nisa
+Group=nisa
+WorkingDirectory=/opt/nisa-sim
+EnvironmentFile=/etc/nisa-sim/%i.env
+Environment=DB_PATH=/var/lib/nisa-sim/%i/app.sqlite
+ExecStart=/usr/local/bin/node scripts/purge.js
+# 終了コード 2 = 削除失敗あり → 監視で通知する

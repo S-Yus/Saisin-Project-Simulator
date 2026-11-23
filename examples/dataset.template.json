@@ -1,0 +1,33 @@
+{
+  "_comment": "構造の雛形（docs/DATA_INPUT.md）。値はプレースホルダのため、そのままでは取込に失敗します（意図的）。実データ・許諾・条件を捏造しないでください。",
+  "meta": { "name": "（データ名）", "kind": "production", "version": "（データ版 例: 2026-11-01取得版）", "period_start": "YYYY-MM-DD", "period_end": "YYYY-MM-DD" },
+  "broker_basis": { "name": "（基準とする証券会社・販売会社）", "status": "unconfirmed" },
+  "sources": [
+    { "id": "s1", "name": "（提供元）", "url": "https://…", "retrieved_at": "YYYY-MM-DD", "license_status": "unconfirmed", "license_note": "（確認した契約・規約名と確認日）", "adjustment": "raw_unadjusted" }
+  ],
+  "instruments": [
+    { "id": "STOCK1", "type": "stock", "name": "（名称）", "category": "国内株式", "description": "（短い説明）", "source_id": "s1",
+      "terms": { "terms_status": "provisional", "lot_size": 100, "settlement_days": 2,
+                 "fee": { "rate_ppm": 0, "fixed": 0, "min": 0, "max": null },
+                 "price_limit_table": [["（基準値段の上限・未満）", "（制限値幅）"]], "price_limit_multiplier": 1 } },
+    { "id": "ETF1", "type": "etf", "name": "（名称）", "category": "国内ETF", "description": "（短い説明）", "source_id": "s1",
+      "terms": { "terms_status": "provisional", "lot_size": 1, "settlement_days": 2,
+                 "fee": { "rate_ppm": 0, "fixed": 0, "min": 0, "max": null }, "buy_reserve_margin_bp": "（確保率の根拠が確定したら整数で）" } },
+    { "id": "FUND1", "type": "fund", "name": "（名称）", "category": "投資信託", "description": "（短い説明）", "source_id": "s1",
+      "terms": { "terms_status": "provisional", "min_amount": 100, "amount_step": 1, "nav_offset": 1, "buy_settlement_days": 0, "settlement_days": 4,
+                 "holdback_ppm": 0, "savings_ok": true, "distribution_mode": "cash", "fee": { "rate_ppm": 0, "fixed": 0, "min": 0, "max": null } } }
+  ],
+  "prices": [
+    { "instrument_id": "STOCK1", "date": "YYYY-MM-DD", "open": "（始値）", "close": "（終値）", "status": "normal" },
+    { "instrument_id": "FUND1", "date": "YYYY-MM-DD", "close": "（基準価額・1万口あたり）", "status": "normal" }
+  ],
+  "prices_csv": "instrument_id,date,open,close,status\nETF1,YYYY-MM-DD,（始値）,（終値）,normal",
+  "actions": [
+    { "instrument_id": "STOCK1", "type": "dividend", "ex_date": "（権利落日）", "record_date": "（権利確定日）", "per_unit": "（1株あたり・税引前）", "pay_date": "（支払開始日）" },
+    { "instrument_id": "FUND1", "type": "dividend", "ex_date": "（決算日）", "record_date": "（決算日）", "per_unit": "（1万口あたり・税引前）", "pay_date": "（支払日）" },
+    { "instrument_id": "STOCK1", "type": "split", "ex_date": "（効力発生日）", "num": 3, "den": 2, "fraction_price": "（端数処分代金・新株1株あたり）", "fraction_pay_date": "（支払日）" }
+  ],
+  "news": [
+    { "id": "n1", "published_date": "YYYY-MM-DD", "summary": "（自分で書いた短い要約。記事の転載はしない）", "source_name": "（出典名）", "url": "https://…" }
+  ]
+}

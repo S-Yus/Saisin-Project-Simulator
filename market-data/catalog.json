@@ -1,0 +1,580 @@
+{
+  "_comment": "実データの台帳（機械可読）。raw/ の元ファイルは取得したまま変更しない。scripts/build-dataset.js がこの台帳と raw/ から取込ファイルを生成し、ハッシュ・期間・単位・重複・欠損を再検証する。利用許諾は未確認（license_status は人が確認するまで unconfirmed のまま）。取引条件は 2026-11-23 時点の掲載内容からの仮設定で、さいしんの確認が必要。",
+  "meta": {
+    "name": "さいしん取扱投資信託 日次基準価額（2023-11〜2026-10）",
+    "version": "2026-11-23取得版",
+    "period_start": "2023-11-01",
+    "period_end": "2026-10-31"
+  },
+  "broker_basis": {
+    "name": "埼玉縣信用金庫（投資信託窓販。条件は 2026-11-23 時点の公開ページからの転記で、金庫による確認前）",
+    "status": "unconfirmed",
+    "reference_url": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+  },
+  "calendar_check": {
+    "file": "raw/amova_holidays.json",
+    "sha256": "970c3d6bf261855a8e5553f47a63270439823b784855e89e03c3d51fd8d6c3a4",
+    "url": "https://www.amova-am.com/api/funddata-holidays",
+    "retrieved_at": "2026-11-23T11:29:00Z",
+    "note": "国内の祝日一覧。平日 − 祝日 − 12/31〜1/3 を営業日として、価格日付と突合する（独立した検算用。価格の補完には使わない）"
+  },
+  "sources": [
+    {
+      "id": "amova",
+      "name": "アモーヴァ・アセットマネジメント 公式サイト（基準価額データ）",
+      "url": "https://www.amova-am.com/",
+      "license_status": "unconfirmed",
+      "license_note": "公式サイトで公開されているCSV。アプリ内での利用・表示の許諾は未確認",
+      "unit_evidence": "公式API fund-japan の params.unit = 「1万口当たり」／CSV 見出し「基準価額（円）」「分配金（税引前）（円）」"
+    },
+    {
+      "id": "amone",
+      "name": "アセットマネジメントOne 公式サイト（基準価額データ）",
+      "url": "https://www.am-one.co.jp/",
+      "license_status": "unconfirmed",
+      "license_note": "公式サイトで公開されているCSV。アプリ内での利用・表示の許諾は未確認",
+      "unit_evidence": "商品ページの記載「1万口当たりの価額」／CSV 見出し「基準価額（円）」"
+    },
+    {
+      "id": "skam",
+      "name": "しんきんアセットマネジメント投信 公式サイト（基準価額データ）",
+      "url": "https://www.skam.co.jp/",
+      "license_status": "unconfirmed",
+      "license_note": "公式サイトで公開されているCSV。アプリ内での利用・表示の許諾は未確認",
+      "unit_evidence": "商品ページの記載「基準価額および分配金は、１万口当たりで表示しています」"
+    }
+  ],
+  "funds": [
+    {
+      "id": "358347",
+      "adoption": "candidate",
+      "name": "年金積立 Ｊグロース（愛称：つみたてＪグロース）",
+      "manager": "アモーヴァ・アセットマネジメント",
+      "category": "国内株式",
+      "description": "日本の株式に投資するアクティブ運用の投資信託。",
+      "source_id": "amova",
+      "format": "amova",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/358347.csv",
+          "sha256": "9176768187e3dbd741c2828a23e4854d755eccd46c7654c7af27e9dbef3b0eb7",
+          "url": "https://www.amova-am.com/api/fund-export?funds%5B%5D=358347",
+          "retrieved_at": "2026-11-17T02:53:10Z"
+        }
+      ],
+      "product_page": "https://www.amova-am.com/fund/detail/358347",
+      "nisa": {
+        "label": "つみたて投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2001103104.html",
+        "note": "さいしん掲載の申込単位は定時定額取引（積立）のみ。一括購入を体験に含めるかは要判断"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 1000,
+        "amount_step": 1000,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 1,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 0,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "手数料なし・留保額なし・換金価額は申込受付日の基準価額（さいしん掲載 2026-11-23）。受渡日数は未確認の仮値"
+    },
+    {
+      "id": "313567",
+      "adoption": "candidate",
+      "name": "グローバル・ハイクオリティ成長株式ファンド（為替ヘッジなし）（愛称：未来の世界）",
+      "manager": "アセットマネジメントOne",
+      "category": "海外株式",
+      "description": "世界の株式に投資するアクティブ運用の投資信託（為替ヘッジなし）。",
+      "source_id": "amone",
+      "format": "amone",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/313567.csv",
+          "sha256": "6b2e2453cbf725d2fc1e1b4b0bbae50f63cd48f905ca2396c8464d190ff20929",
+          "url": "https://www.am-one.co.jp/chart_data/313567/313567.csv",
+          "retrieved_at": "2026-11-17T02:53:10Z"
+        }
+      ],
+      "product_page": "https://www.am-one.co.jp/fund/chart/313567/",
+      "nisa": {
+        "label": "つみたて投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/201609300B.html",
+        "note": "さいしん掲載の申込単位は定時定額取引（積立）のみ。信託財産留保額は 2025-06-07 に廃止（それ以前は 0.3%）。本データは現在の条件（なし）を全期間に適用"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 1000,
+        "amount_step": 1000,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 0,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "手数料なし・留保額なし・換金価額は申込受付日の翌営業日の基準価額（さいしん掲載 2026-11-23）。申込不可日・受渡日数は未確認"
+    },
+    {
+      "id": "645013",
+      "adoption": "candidate",
+      "name": "インデックスファンドNASDAQ100（アメリカ株式）",
+      "manager": "アモーヴァ・アセットマネジメント",
+      "category": "海外株式（インデックス）",
+      "description": "米国のNASDAQ100指数（円換算）に連動する投資成果をめざすインデックス型の投資信託。",
+      "source_id": "amova",
+      "format": "amova",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/645013.csv",
+          "sha256": "5ef665e207a75a012afd2908680b22eb834a29bf9d007f31a096a511388fb188",
+          "url": "https://www.amova-am.com/api/fund-export?funds%5B%5D=645013",
+          "retrieved_at": "2026-11-23T11:30:22Z"
+        }
+      ],
+      "product_page": "https://www.amova-am.com/fund/detail/645013",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2020083104.html",
+        "note": "さいしん掲載の申込単位は窓口・投信インターネットサービスの1万円以上1円単位（定時定額の記載なし）"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": false,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 2.2%（窓口）・留保額なし・翌営業日の基準価額（さいしん掲載 2026-11-23）。積立の取扱は掲載がないため不可とした。受渡日数は未確認"
+    },
+    {
+      "id": "313528",
+      "adoption": "candidate",
+      "name": "One高格付インカム・オープン（1年決算コース）（愛称：ハッピークローバー1年）",
+      "manager": "アセットマネジメントOne",
+      "category": "海外債券",
+      "description": "信用力の高い海外の債券に投資する投資信託（年1回決算）。",
+      "source_id": "amone",
+      "format": "amone",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/313528.csv",
+          "sha256": "b4451bd7ce3c646063843cab5d4a8a26a09def0f9611fd1064d4dd6ecc11bbdb",
+          "url": "https://www.am-one.co.jp/chart_data/313528/313528.csv",
+          "retrieved_at": "2026-11-17T02:53:10Z"
+        }
+      ],
+      "product_page": "https://www.am-one.co.jp/fund/chart/313528/",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2008092901.html"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 2.2%（窓口・定時定額）・留保額なし・翌営業日の基準価額（さいしん掲載 2026-11-23）。受渡日数は未確認"
+    },
+    {
+      "id": "140882",
+      "adoption": "candidate",
+      "name": "しんきんグローバル６資産ファンド（１年決算型）",
+      "manager": "しんきんアセットマネジメント投信",
+      "category": "バランス",
+      "description": "国内外の株式・債券・不動産投資信託（REIT）の6資産に分散して投資する投資信託（年1回決算）。",
+      "source_id": "skam",
+      "format": "skam",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/140882_nav.csv",
+          "sha256": "1d9348c36d08fc4c982f39c1f051eaefa7b429d1e6605143d60afb825869d25a",
+          "url": "https://www.skam.co.jp/fund/chart_data/140882/140882_nav.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        },
+        {
+          "role": "dis",
+          "file": "raw/140882_dis.csv",
+          "sha256": "964be983a15080013e930e2c26047b1370b234bdf87e63350ceda405a178a3a7",
+          "url": "https://www.skam.co.jp/fund/chart_data/140882/140882_dis.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        }
+      ],
+      "product_page": "https://www.skam.co.jp/fund/detail/140882/",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2019101602.html"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 3000,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 2.2%・信託財産留保額 0.3%・翌営業日の基準価額（さいしん掲載 2026-11-23）。受渡日数は未確認"
+    },
+    {
+      "id": "140873",
+      "adoption": "candidate",
+      "name": "しんきんＪリートオープン（１年決算型）",
+      "manager": "しんきんアセットマネジメント投信",
+      "category": "国内REIT",
+      "description": "日本の不動産投資信託（J-REIT）に投資する投資信託（年1回決算）。",
+      "source_id": "skam",
+      "format": "skam",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/140873_nav.csv",
+          "sha256": "45bb2b6ff078bf0c953e54133ddb112ec05ec81021e308abbba1544c2531e68d",
+          "url": "https://www.skam.co.jp/fund/chart_data/140873/140873_nav.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        },
+        {
+          "role": "dis",
+          "file": "raw/140873_dis.csv",
+          "sha256": "fa8a00ecfd8d3146c7ae6c4808d15902fb0c048e148771912e19e44afae5d2f7",
+          "url": "https://www.skam.co.jp/fund/chart_data/140873/140873_dis.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        }
+      ],
+      "product_page": "https://www.skam.co.jp/fund/detail/140873/",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2014012102.html"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 1,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 3000,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 2.2%・信託財産留保額 0.3%・申込受付日の基準価額（さいしん掲載 2026-11-23）。受渡日数は未確認"
+    },
+    {
+      "id": "643718",
+      "adoption": "candidate",
+      "name": "ゴールド・ファンド（為替ヘッジなし）",
+      "manager": "アモーヴァ・アセットマネジメント",
+      "category": "金",
+      "description": "実質的に金に投資する投資信託（為替ヘッジなし）。",
+      "source_id": "amova",
+      "format": "amova",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/643718.csv",
+          "sha256": "b92e044a9777497e2e2b560202034006086b384629542acab24a4b6e6b8daceb",
+          "url": "https://www.amova-am.com/api/fund-export?funds%5B%5D=643718",
+          "retrieved_at": "2026-11-23T11:30:14Z"
+        }
+      ],
+      "product_page": "https://www.amova-am.com/fund/detail/643718",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/201707310D.html"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 2.2%・留保額なし・翌営業日の基準価額（さいしん掲載 2026-11-23）。受渡日数は未確認"
+    },
+    {
+      "id": "140875",
+      "adoption": "not_adopted",
+      "not_adopted_reason": "対象期間内に分配金（2024-09-10: 240円、2025-09-10: 400円、2026-09-10: 400円）があるが、支払日（受取日）の公式データを取得できていない。支払日を根拠なく決めないため未採用。支払日を確認できれば採用可能",
+      "name": "しんきん日経平均オープン",
+      "manager": "しんきんアセットマネジメント投信",
+      "category": "国内株式（インデックス）",
+      "description": "日経平均株価に連動する投資成果をめざすインデックス型の投資信託。",
+      "source_id": "skam",
+      "format": "skam",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/140875_nav.csv",
+          "sha256": "f24c1e88e1f675fd5b6ee6591d8a48631e521431d79f8e92b8b50dfec1a9e9e9",
+          "url": "https://www.skam.co.jp/fund/chart_data/140875/140875_nav.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        },
+        {
+          "role": "dis",
+          "file": "raw/140875_dis.csv",
+          "sha256": "dc608143183dd7439259d652ba76c9dabcc8798fa012609768a5c4503106b939",
+          "url": "https://www.skam.co.jp/fund/chart_data/140875/140875_dis.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        }
+      ],
+      "product_page": "https://www.skam.co.jp/fund/detail/140875/",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": "https://apl.wealthadvisor.jp/webasp/saishin/basic/pc/2015091101.html"
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 1,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 0,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 11000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "購入時手数料 1.1%・留保額なし・申込受付日の基準価額（さいしん掲載 2026-11-23）",
+      "distribution_pay_dates": {}
+    },
+    {
+      "id": "140881",
+      "adoption": "not_adopted",
+      "not_adopted_reason": "バランス型は「しんきんグローバル６資産ファンド（１年決算型）」と性格が近いため、似た商品を増やさない方針で未採用（データは検証済みで、差し替え可能）",
+      "name": "しんきん３資産ファンド（１年決算型）",
+      "manager": "しんきんアセットマネジメント投信",
+      "category": "バランス",
+      "description": "国内の株式・不動産投資信託と海外の債券の3資産に分散して投資する投資信託（年1回決算）。",
+      "source_id": "skam",
+      "format": "skam",
+      "files": [
+        {
+          "role": "nav",
+          "file": "raw/140881_nav.csv",
+          "sha256": "ac96fdf29e8d46a18b4c9fb4bf1f0176fe7d6d53e2bebf878e122f26f5dfc910",
+          "url": "https://www.skam.co.jp/fund/chart_data/140881/140881_nav.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        },
+        {
+          "role": "dis",
+          "file": "raw/140881_dis.csv",
+          "sha256": "cbfb233f9d08bfa829ff9591062e0b95c48becd5a86a76f7fb9f832cd984cb0f",
+          "url": "https://www.skam.co.jp/fund/chart_data/140881/140881_dis.csv",
+          "retrieved_at": "2026-11-23T11:31:03Z"
+        }
+      ],
+      "product_page": "https://www.skam.co.jp/fund/detail/140881/",
+      "nisa": {
+        "label": "成長投資枠（さいしん一覧の表示）",
+        "checked_on": "2026-11-23",
+        "source": "https://apl.wealthadvisor.jp/webasp/saishin/fund_pc"
+      },
+      "saishin": {
+        "listed": true,
+        "checked_on": "2026-11-23",
+        "detail_url": null
+      },
+      "terms": {
+        "terms_status": "provisional",
+        "min_amount": 10000,
+        "amount_step": 1,
+        "savings_min_amount": 1000,
+        "savings_amount_step": 1000,
+        "spot_buy_ok": true,
+        "nav_offset": 2,
+        "buy_settlement_days": 0,
+        "settlement_days": 3,
+        "holdback_ppm": 3000,
+        "savings_ok": true,
+        "distribution_mode": "cash",
+        "fee": {
+          "rate_ppm": 22000,
+          "fixed": 0,
+          "min": 0,
+          "max": null
+        }
+      },
+      "terms_basis": "さいしん詳細ページ未取得。仮値"
+    }
+  ],
+  "news": [
+    {
+      "id": "n-20240101",
+      "published_date": "2024-01-01",
+      "summary": "新しいNISA制度が始まった（非課税保有期間の無期限化、年間投資枠の拡大など）。",
+      "source_name": "金融庁 NISA特設ウェブサイト",
+      "url": "https://www.fsa.go.jp/policy/nisa2/"
+    },
+    {
+      "id": "n-20240319",
+      "published_date": "2024-03-19",
+      "summary": "日本銀行が金融政策の枠組みの見直し（マイナス金利政策の解除など）を決定した。",
+      "source_name": "日本銀行「金融政策の枠組みの見直しについて」",
+      "url": "https://www.boj.or.jp/mopo/mpmdeci/state_2024/k240319a.htm"
+    },
+    {
+      "id": "n-20240731",
+      "published_date": "2024-07-31",
+      "summary": "日本銀行が政策金利（無担保コールレート・オーバーナイト物）の誘導目標を0.25%程度に引き上げることを決定した。",
+      "source_name": "日本銀行「金融市場調節方針の変更および長期国債買入れの減額計画の決定について」",
+      "url": "https://www.boj.or.jp/mopo/mpmdeci/state_2024/k240731a.htm"
+    },
+    {
+      "id": "n-20240919",
+      "published_date": "2024-09-19",
+      "summary": "米連邦準備制度理事会（FRB）が政策金利の誘導目標を0.5%引き下げることを決定した（発表は米国時間9月18日）。",
+      "source_name": "Federal Reserve Board「Federal Reserve issues FOMC statement」",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20240918a.htm"
+    },
+    {
+      "id": "n-20250124",
+      "published_date": "2025-01-24",
+      "summary": "日本銀行が政策金利の誘導目標を0.5%程度に引き上げることを決定した。",
+      "source_name": "日本銀行「金融市場調節方針の変更について」",
+      "url": "https://www.boj.or.jp/mopo/mpmdeci/state_2025/k250124a.htm"
+    }
+  ],
+  "news_note": "出典URLの到達とページ題名を 2026-11-23 に確認した実際の公表事項の候補。要約は自作（記事の転載なし・値動きとの因果関係は書かない）。採用可否と文言はさいしんの承認が必要"
+}

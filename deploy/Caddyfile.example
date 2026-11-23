@@ -1,0 +1,34 @@
+# HTTPS リバースプロキシの設定例（Caddy。証明書は自動取得）。ドメイン・IP はプレースホルダ
+# - 公開するのは 443 のみ。アプリ(8081/8082)は 127.0.0.1 でだけ待ち受ける
+# - 管理画面・管理API は許可したIP（金庫・運用担当の拠点 / VPN）からのみ
+# - アクセスログにはクエリ文字列（参加コード）と Authorization を出さない
+
+staging.example.jp {
+	@admin path /admin /admin.html /admin.js /admin-api/*
+	@notAllowed {
+		not remote_ip 192.0.2.0/24   # ← 管理を許可する拠点のIPに置き換える
+	}
+	handle @admin {
+		respond @notAllowed 403
+		reverse_proxy 127.0.0.1:8081
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8081
+	}
+	request_body { max_size 13MB }
+	header Strict-Transport-Security "max-age=31536000"
+	log {
+		output file /var/log/caddy/nisa-staging.log
+		format filter {
+			wrap json
+			fields {
+				request>uri delete                   # クエリ（参加コード）を含む URI は記録しない
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>remote_ip delete
+				request>client_ip delete
+			}
+		}
+	}
+}
+# 本番は同じ構成で prod.example.jp → 127.0.0.1:8082

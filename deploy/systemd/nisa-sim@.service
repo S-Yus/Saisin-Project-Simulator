@@ -1,0 +1,30 @@
+# Docker を使わない場合の例: /opt/nisa-sim にコードを置き、Node 24.11.1 を /usr/local/bin/node に用意
+# 有効化: systemctl enable --now nisa-sim@staging  （/etc/nisa-sim/staging.env を読む）
+[Unit]
+Description=nisa-sim (%i)
+After=network.target
+
+[Service]
+Type=simple
+User=nisa
+Group=nisa
+WorkingDirectory=/opt/nisa-sim
+EnvironmentFile=/etc/nisa-sim/%i.env
+Environment=DB_PATH=/var/lib/nisa-sim/%i/app.sqlite
+ExecStart=/usr/local/bin/node server/index.js
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=3
+# 権限の最小化
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nisa-sim/%i
+StateDirectory=nisa-sim/%i
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

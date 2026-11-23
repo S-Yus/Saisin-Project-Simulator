@@ -1,0 +1,19 @@
+{
+  "name": "nisa-sim",
+  "version": "0.3.0",
+  "private": true,
+  "description": "大学生向け 資産形成説明会 投資シミュレーター（説明会限定・実データのみ）",
+  "type": "commonjs",
+  "engines": {
+    "node": "24.11.1"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test \"test/*.test.js\"",
+    "loadtest": "node scripts/loadtest.js",
+    "purge": "node scripts/purge.js",
+    "dev-seed": "node scripts/dev-seed.js",
+    "build-data": "node scripts/build-dataset.js",
+    "check-data": "node scripts/build-dataset.js --check"
+  }
+}

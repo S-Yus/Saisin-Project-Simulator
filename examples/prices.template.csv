@@ -1,0 +1,3 @@
+instrument_id,date,open,close,status
+STOCK1,YYYY-MM-DD,（始値）,（終値）,normal
+STOCK1,YYYY-MM-DD,,,halt

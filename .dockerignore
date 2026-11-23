@@ -1,0 +1,12 @@
+data-*
+test
+docs
+examples
+deploy
+scripts/dev-seed.js
+scripts/loadtest.js
+.env*
+*.sqlite*
+node_modules
+market-data
+scripts/build-dataset.js

@@ -1,0 +1,10 @@
+# Cloudflare Tunnel 設定の雛形（確認用環境）。<TUNNEL_ID> と資格情報のパスを置き換えて cloudflared-staging.yml として保存する
+tunnel: <TUNNEL_ID>
+credentials-file: C:\Users\<USER>\.cloudflared\<TUNNEL_ID>.json
+ingress:
+  - hostname: staging.nisa-simulator.app
+    path: ^/(admin|admin\.html|admin\.js|admin-api)(/.*)?$
+    service: http_status:404
+  - hostname: staging.nisa-simulator.app
+    service: http://127.0.0.1:8081
+  - service: http_status:404
