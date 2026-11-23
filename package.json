@@ -1,6 +1,6 @@
 {
   "name": "nisa-sim",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "大学生向け 資産形成説明会 投資シミュレーター（説明会限定・実データのみ）",
   "type": "commonjs",

@@ -58,7 +58,7 @@ async function api(method, path, body) {
 }
 function showEnded(msg) {
   S.ended = true; stopAuto(); store.clear();
-  $('#top').hidden = true; $('#tabs').hidden = true; $('#statusbar').hidden = true;
+  $('#top').hidden = true; $('#tabs').hidden = true; $('#statusbar').hidden = true; $('#coach').hidden = true;
   $('#view').innerHTML = `<h1>この説明会の利用は終了しました</h1><div class="msg warn">${esc(msg)}</div><p>新しい操作・参加はできません。画面や端末に残った表示は、サーバー側からは消去できません。</p>${discHtml()}`;
 }
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; $('#toasts').append(d); setTimeout(() => d.remove(), 5000); }
@@ -73,18 +73,28 @@ const Q = (k) => `<button class="q" data-term="${k}" aria-label="${esc(TERMS[k][
 async function refresh() { S.me = await api('GET', '/api/me'); S.offset = Date.parse(S.me.server_now) - Date.now(); renderHeader(); return S.me; }
 function renderHeader() {
   const m = S.me; $('#top').hidden = false; $('#tabs').hidden = false;
-  $('#simdate').textContent = jdate(m.account.sim_date);
+  if (!S.playing) setClock(m.account.sim_date);
+  $('#period').textContent = (m.event.data.kind === 'dev_test' ? '架空データ ' : '過去の実データ ') + ymShort(m.event.period.start) + '–' + ymShort(m.event.period.end);
   showEnvBanner(m.event.env, m.event.data);
   const sb = $('#statusbar');
   if (m.event.status === 'paused') { sb.hidden = false; sb.textContent = '管理者により一時停止中です。再開まで操作できません。'; }
   else if (m.account.status === 'saved') { sb.hidden = false; sb.textContent = `これは ${m.account.attempt} 回目の記録です（閲覧専用）。`; } else sb.hidden = true;
 }
+const ymShort = (d) => `${d.slice(0, 4)}.${Number(d.slice(5, 7))}`;
+const monthIdx = (d) => Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7));
+// 日付と「何か月目か」の表示。時間を進める演出の間は、1営業日ずつここを書き換える
+function setClock(d) {
+  const p = S.me.event.period; const total = monthIdx(p.end) - monthIdx(p.start) + 1, cur = monthIdx(d) - monthIdx(p.start) + 1;
+  $('#simdate').textContent = jdate(d);
+  $('#tmonth').textContent = `${total}か月のうち ${cur}か月目`;
+  const span = Date.parse(p.end) - Date.parse(p.start); $('#tprog').style.width = (span > 0 ? Math.max(0, Math.min(100, ((Date.parse(d) - Date.parse(p.start)) / span) * 100)) : 0) + '%';
+}
 const locked = () => S.me.event.status === 'paused' || S.me.account.status !== 'active';
 const onHome = () => location.hash.startsWith('#/home') || !location.hash;
 
 // ---------- ルーター ----------
-const routes = { home: viewHome, market: viewMarket, i: viewInstrument, orders: viewRecords, history: viewRecords, compare: viewCompare, news: viewNews, more: viewMore, guide: viewGuide };
-const TAB_OF = { i: 'market', history: 'orders', compare: 'orders', news: 'home', guide: 'more' };
+const routes = { home: viewHome, market: viewMarket, i: viewInstrument, orders: viewRecords, history: viewRecords, compare: viewCompare, news: viewNews, more: viewMore };
+const TAB_OF = { i: 'market', history: 'orders', compare: 'orders', news: 'home' };
 async function route() {
   if (S.ended) return;
   const params = new URLSearchParams(location.search);
@@ -95,7 +105,7 @@ async function route() {
     const tab = TAB_OF[name] || name || 'home';
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.t === tab));
     await (routes[name] || viewHome)(decodeURIComponent(arg || ''), name);
-    window.scrollTo(0, 0); $('#view').focus({ preventScroll: true });
+    window.scrollTo(0, 0); $('#view').focus({ preventScroll: true }); coachSoon();
   } catch (e) { if (!e.ended) $('#view').innerHTML = `<div class="msg err">${esc(e.message)}${e.unknown ? '<br>通信を確認して、画面を更新してください。' : ''}</div>`; }
 }
 window.addEventListener('hashchange', route);
@@ -134,23 +144,23 @@ function wizard() {
   const ev = W.ev; const v = $('#view'); const L = ev.funds.limits; const s = W.step;
   const head = s === 0 ? '' : `<div class="prog" role="progressbar" aria-valuemin="1" aria-valuemax="${WIZ_STEPS}" aria-valuenow="${s}"><span style="width:${(s / WIZ_STEPS) * 100}%"></span></div><div class="num">質問 ${s} / ${WIZ_STEPS}</div>`;
   const foot = (nextLabel, opts = {}) => `<div class="foot"><div id="wmsg"></div><div class="stack"><button class="btn pri" id="wnext" ${opts.disabled ? 'disabled' : ''}>${nextLabel}</button>${s > 0 ? '<button class="btn quiet" id="wback">戻る</button>' : ''}</div>${opts.skip ? '<p style="text-align:center"><button class="linkbtn" id="wskip">質問をとばして、金額だけ決める</button></p>' : ''}</div>`;
-  const local = '<p class="fine">この回答はこの端末の中だけで使い、送信・保存しません。</p>';
+  const local = '<p class="fine">回答は送信されません（この端末の中だけ）。</p>';
   let body;
   if (s === 0) body = `<div class="eyebrow">資産形成シミュレーター</div><h1>${esc(ev.name)}</h1>
-    <p>投資対象を自分で選び、買う・売る・積み立てるを試せます。氏名やメールアドレスの入力は不要で、実際のお金や口座にはつながりません。</p>
+    <p>自分で選んで、買う・売る・積み立てるを試せます。名前などの入力はなく、実際のお金は動きません。</p>
     <div class="msg">${periodLine(ev.data)}</div>${startStatusHtml(ev)}
-    <p>はじめに、いくつかの質問に答えて<b>自分に合った金額</b>を決めます（1分ほど）。</p>
+    <p>まず、<b>自分に合った金額</b>を決めます（1分）。</p>
     <p class="fine">開催時間: ${esc(new Date(ev.starts_at).toLocaleString('ja-JP'))} 〜 ${esc(new Date(ev.ends_at).toLocaleString('ja-JP'))}。終了後は操作できなくなり、参加データは終了の ${ev.retention_hours} 時間後に自動削除されます（削除には運用上の制約があります。詳しくは主催者にご確認ください）。</p>
     ${foot(ev.joinable ? 'はじめる' : '現在は参加できません', { disabled: !ev.joinable })}`;
   else if (s === 1) body = `<h1>いまの学年を教えてください</h1>${local}<div class="choices">${GRADES.map((g) => `<button type="button" class="chip ${W.grade === g ? 'on' : ''}" data-grade="${g}">${g}</button>`).join('')}</div>${foot('次へ', { skip: true })}`;
-  else if (s === 2) body = `<h1>毎月の収入は、だいたいいくらですか</h1><p class="sub">アルバイト代・仕送り・おこづかいなどの合計です。おおよそで構いません。</p>${local}${moneyField('wval', W.income, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
-  else if (s === 3) body = `<h1>毎月の支出は、だいたいいくらですか</h1><p class="sub">家賃・食費・通信費・交際費など、毎月出ていくお金の合計です。</p>${local}${moneyField('wval', W.expense, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
+  else if (s === 2) body = `<h1>毎月の収入は、だいたいいくらですか</h1><p class="sub">アルバイト・仕送りなどの合計。だいたいでOK。</p>${local}${moneyField('wval', W.income, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
+  else if (s === 3) body = `<h1>毎月の支出は、だいたいいくらですか</h1><p class="sub">家賃・食費・通信費など。だいたいでOK。</p>${local}${moneyField('wval', W.expense, INCOME_CHOICES)}${foot('次へ', { skip: true })}`;
   else if (s === 4) {
     const rest = W.income != null && W.expense != null ? W.income - W.expense : null;
     body = `<h1>毎月、投資に回す金額を決めましょう</h1>
-    ${rest != null ? `<div class="calc"><div><span>毎月の収入</span><span>${yen(W.income)}</span></div><div><span>毎月の支出</span><span>−${yen(W.expense)}</span></div><div><span>差し引き</span><span>${rest < 0 ? '−' + yen(-rest) : yen(rest)}</span></div></div><p class="sub">差し引きの範囲で、無理のない金額を自分で決めてください。</p>` : '<p class="sub">シミュレーションの中で、毎月はじめに入ってくる金額です。</p>'}
+    ${rest != null ? `<div class="calc"><div><span>毎月の収入</span><span>${yen(W.income)}</span></div><div><span>毎月の支出</span><span>−${yen(W.expense)}</span></div><div><span>差し引き</span><span>${rest < 0 ? '−' + yen(-rest) : yen(rest)}</span></div></div>` : '<p class="sub">シミュレーションの中で、毎月はじめに入ってくる金額です。</p>'}
     ${moneyField('wval', W.monthly, [0, ...MONTHLY_CHOICES])}<p class="fine">0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
-  } else if (s === 5) body = `<h1>最初に用意する金額を決めましょう</h1><p class="sub">シミュレーションの開始時点で持っているお金です。貯金のうち、投資に回してもよいと思う金額を入れてみてください。</p>
+  } else if (s === 5) body = `<h1>最初に用意する金額を決めましょう</h1><p class="sub">スタート時点で持っているお金です。</p>
     ${moneyField('wval', W.initial, INITIAL_CHOICES)}<p class="fine">0〜${yen(L.initial_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
   else body = `<h1>この条件で始めます</h1>
     <dl class="pair"><div><dt>最初の金額</dt><dd>${yen(W.initial)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(W.monthly)}</dd></div></dl>
@@ -184,28 +194,53 @@ function wizard() {
     try {
       const r = await api('POST', '/api/join', { code: W.code, initial_cash: W.initial, monthly_deposit: W.monthly });
       store.set(r.token); ls.set(PROFILE_KEY, JSON.stringify({ grade: W.grade, income: W.income, expense: W.expense }));
-      history.replaceState(null, '', '/#/guide'); route();
+      ls.del(GUIDE_KEY); history.replaceState(null, '', '/#/home'); route();
     } catch (e) { msg(e.message); b.disabled = false; }
   });
 }
 
-// ---------- 使い方（4ステップ） ----------
-const GUIDE = [
-  ['えらぶ', '下の「さがす」から、投資対象を1つえらびます。分類や、これまでの値動きを見られます。'],
-  ['注文する', '「買う」「売る」「積立」のどれかを押して、金額を入れます。注文はその日の終わりに受け付けられ、あとの営業日の価格で成立します。成立する価格は、注文するときには分かりません。'],
-  ['時間を進める', 'ホームの「翌営業日へ」「翌月へ」で日付を進めます。過去の実際の値動きを、順番に体験していきます。'],
-  ['ふり返る', 'データの最終日まで進むと、結果が出ます。金額や買い方を変えて、何度でもやり直せます。'],
-];
-let guideStep = 0;
-async function viewGuide() {
-  const i = guideStep; const [t, d] = GUIDE[i]; const last = i === GUIDE.length - 1;
-  $('#view').innerHTML = `<div class="wiz"><div class="prog"><span style="width:${((i + 1) / GUIDE.length) * 100}%"></span></div><div class="num">使い方 ${i + 1} / ${GUIDE.length}</div>
-  <div class="bignum" aria-hidden="true">${i + 1}</div><h1>${esc(t)}</h1><p>${esc(d)}</p>
-  <div class="foot"><div class="stack"><button class="btn pri" id="gnext">${last ? 'ホームへ進む' : '次へ'}</button>${i > 0 ? '<button class="btn quiet" id="gback">戻る</button>' : ''}</div>${last ? '' : '<p style="text-align:center"><button class="linkbtn" id="gskip">とばしてホームへ</button></p>'}</div></div>`;
-  const done = () => { guideStep = 0; ls.set(GUIDE_KEY, '1'); location.hash = '#/home'; };
-  $('#gnext').onclick = () => { if (last) done(); else { guideStep++; viewGuide(); window.scrollTo(0, 0); } };
-  $('#gback')?.addEventListener('click', () => { guideStep--; viewGuide(); }); $('#gskip')?.addEventListener('click', done);
+// ---------- ガイド: いま押す場所を、画面の上で直接示す ----------
+// 説明のページは出さない。対象のボタンを輪で囲み、短いことばを添えるだけ（操作はじゃましない）。最初の時間進行まで終えたら消える。
+const coachEl = $('#coach');
+function coachTarget() {
+  if (ls.get(GUIDE_KEY) === 'done' || !S.me || S.ended || !store.get()) return null;
+  const m = S.me; const h = location.hash;
+  if (m.account.status !== 'active' || m.event.status === 'paused' || S.auto || S.playing) return null;
+  if (onHome()) {
+    if (m.series.length > 1 && !S.guideForce) { ls.set(GUIDE_KEY, 'done'); return null; }
+    if (S.guideForce && m.series.length > 1 && (m.assets.holdings.length || m.orders.length)) { S.guideForce = false; ls.set(GUIDE_KEY, 'done'); return null; }
+    if (!m.orders.length && !m.assets.holdings.length && !m.plans.length) return ['#go-market', 'ここを押して、えらぶ'];
+    return ['#adv-month', 'ここを押して、時間を進める'];
+  }
+  if (h.startsWith('#/market')) return ['.rows a.row', '気になるものを押す'];
+  if (h.startsWith('#/i/')) {
+    if ($('#orderpanel a[href="#/home"]')) return ['#orderpanel a[href="#/home"]', 'ホームへもどる'];
+    if ($('#pamt') || $('#pok')) return null;
+    if ($('#submit')) return ['#submit', 'ここを押すと注文'];
+    if ($('#tocf')) return $('#tocf').disabled ? ['#oval', '金額を入れる'] : ['#tocf', '内容を確認'];
+    return ['[data-mode="buy"]', '「買う」を押す'];
+  }
+  return null;
 }
+let coachSel = null;
+function coach() {
+  const tg = coachTarget(); const el = tg && document.querySelector(tg[0]);
+  if (!el || !el.offsetParent) { coachEl.hidden = true; coachSel = null; return; }
+  const r = el.getBoundingClientRect(); const pad = 6;
+  coachEl.hidden = false;
+  const ring = coachEl.querySelector('.ring'), tip = coachEl.querySelector('.tip');
+  ring.style.cssText = `left:${r.left + window.scrollX - pad}px;top:${r.top + window.scrollY - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px`;
+  tip.querySelector('span').textContent = tg[1];
+  const below = r.bottom < window.innerHeight - 170; // 見出しを隠さないよう、基本は対象の下に出す（下に余白がなければ上）
+  tip.style.cssText = `left:${Math.max(12, Math.min(window.innerWidth - 232, r.left + window.scrollX))}px;top:${below ? r.bottom + window.scrollY + 14 : r.top + window.scrollY - 54}px`;
+  tip.classList.toggle('below', below);
+  if (coachSel !== tg[0]) { coachSel = tg[0]; if (r.top < 90 || r.bottom > window.innerHeight - 100) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
+let coachT = null; const coachSoon = () => { clearTimeout(coachT); coachT = setTimeout(coach, 80); };
+new MutationObserver(coachSoon).observe($('#view'), { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'class'] });
+window.addEventListener('resize', coachSoon); window.addEventListener('scroll', coachSoon, { passive: true });
+$('#coach-x').addEventListener('click', () => { ls.set(GUIDE_KEY, 'done'); coach(); });
+const buzz = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch { /* 対応していない端末では何もしない */ } };
 
 // ---------- 共通部品 ----------
 function chart(series, opts = {}) {
@@ -217,6 +252,18 @@ function chart(series, opts = {}) {
   return `<svg class="chart" viewBox="0 0 ${W0} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(opts.label || '推移')}"><line x1="0" y1="${H - 1}" x2="${W0}" y2="${H - 1}" stroke="#17223b" stroke-width="1"/><polyline points="${pts}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
   <div class="chart-ends"><span>${esc(jdate(series[0][0]))}</span><span>最小 ${esc(num(Math.round(lo)))} ／ 最大 ${esc(num(Math.round(hi)))}</span><span>${esc(jdate(series[series.length - 1][0]))}</span></div>`;
 }
+// 愛称があればそれを大きく、正式名称は小さく添える（正式名称は必ず表示する）
+const shortName = (n) => { const m = String(n).match(/愛称[：:]\s*([^）)』]+)/); return m ? m[1].trim() : String(n).replace(/[（(][^（()）]*[)）]\s*$/, '').trim() || String(n); };
+const nameHtml = (n) => { const s = shortName(n); return `<div class="nm">${esc(s)}</div>${s !== n ? `<div class="fine official">${esc(n)}</div>` : ''}`; };
+// 分類を1文字の印で表す
+const sealChar = (c) => (/金/.test(c) && !/資金/.test(c) ? '金' : /REIT|リート|不動産/i.test(c) ? '不' : /バランス/.test(c) ? '均' : /債/.test(c) ? '債' : /インデックス/.test(c) ? '指' : /海外|世界|外国/.test(c) ? '世' : /国内|日本/.test(c) ? '日' : /ETF/i.test(c) ? 'E' : (c || '・').slice(0, 1));
+const seal = (c) => `<span class="seal" aria-hidden="true">${esc(sealChar(c))}</span>`;
+function spark(vals) {
+  if (!vals || vals.length < 2) return '<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><line x1="2" y1="12" x2="62" y2="12" stroke="#c9c4b5" stroke-width="1.5" stroke-dasharray="2 3"/></svg>';
+  let lo = Math.min(...vals), hi = Math.max(...vals); if (lo === hi) { lo -= 1; hi += 1; }
+  const pts = vals.map((v, i) => `${(2 + (i / (vals.length - 1)) * 60).toFixed(1)},${(21 - ((v - lo) / (hi - lo)) * 18).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${vals[vals.length - 1] >= vals[0] ? '#0f5e52' : '#b4472b'}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
 const tagFor = (s) => ({ accepted: '<span class="tag acc">受付済み</span>', filled: '<span class="tag fill">成立済み</span>', cancelled: '<span class="tag cx">取消済み</span>', lapsed: '<span class="tag lap">失効</span>' }[s] || esc(s));
 const sideJa = (o) => `${o.side === 'buy' ? '買い' : '売り'}`;
 function orderLine(o, cancellable, curDate) {
@@ -225,7 +272,7 @@ function orderLine(o, cancellable, curDate) {
   else if (o.status === 'filled') timing = `${jdate(o.closed_date)} 成立${o.price_milli != null ? ` ／ 価格 ${milli(o.price_milli)}` : ''}${o.fee ? ` ／ 費用 ${yen(o.fee)}` : ''}${o.units ? ` ／ ${num(o.units)}口` : ''}`;
   else timing = `${jdate(o.closed_date)}　${esc(o.reason || '')}`;
   const cx = o.status === 'accepted' && cancellable && o.placed_date === curDate ? `<div style="margin-top:8px"><button class="btn danger sm" data-cancel="${o.id}">この注文を取り消す</button></div>` : o.status === 'accepted' ? '<div class="fine">取消できる期限を過ぎています</div>' : '';
-  return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span class="nm">${esc(o.name)}</span>${tagFor(o.status)}</div><div>${sideJa(o)} ${qty}${o.origin === 'plan' ? ' <span class="tag">積立</span>' : ''}</div><div class="fine">注文した日 ${jdate(o.placed_date)}　${timing}</div>${cx}</div>`;
+  return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span class="nm">${esc(shortName(o.name))}</span>${tagFor(o.status)}</div><div>${sideJa(o)} ${qty}${o.origin === 'plan' ? ' <span class="tag">積立</span>' : ''}</div><div class="fine">注文した日 ${jdate(o.placed_date)}　${timing}</div>${cx}</div>`;
 }
 async function lookup(requestId) { try { return await api('GET', '/api/requests/' + encodeURIComponent(requestId)); } catch (e) { return e.unknown ? null : { found: false }; } }
 async function doPost(path, body) { return api('POST', path, { request_id: rid(), expected_sim_date: S.me.account.sim_date, ...body }); }
@@ -250,55 +297,83 @@ function newsList(list) {
   return `<div class="rows">${list.map((n) => `<div class="row" style="display:block"><div class="fine">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div><div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('')}</div>`;
 }
 
-// ---------- ホーム: いまの状態と、次にやること ----------
-const STEP_NAMES = ['えらぶ', '注文する', '時間を進める', 'ふり返る'];
+// ---------- ホーム: 数字とグラフと、次に押すボタン ----------
+const STEP_NAMES = ['えらぶ', '注文', '進める', 'ふり返る'];
 const stepLine = (cur) => `<div class="stepline" aria-label="いまの段階">${STEP_NAMES.map((n, i) => `<span class="${i + 1 === cur ? 'on' : i + 1 < cur ? 'done' : ''}"><i>${i + 1}</i>${n}</span>`).join('')}</div>`;
-const timeButtons = (primary) => `<div class="btns"><button class="btn ${primary ? 'pri' : ''}" id="adv-day" ${locked() || S.auto ? 'disabled' : ''}>翌営業日へ</button><button class="btn ${primary ? 'pri' : ''}" id="adv-month" ${locked() || S.auto ? 'disabled' : ''}>翌月へ</button></div>
-  <div class="stack"><button class="btn ${S.auto ? 'danger' : 'quiet'}" id="auto" ${locked() ? 'disabled' : ''}>${S.auto ? '自動進行を止める' : '月ごとに自動で進める'}</button></div>`;
+const ICON = { day: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l11 7-11 7z"/></svg>', month: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5l9 7-9 7zM12 5l9 7-9 7z"/></svg>', auto: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 0 7.7 10h-2.1A6 6 0 1 1 12 6c1.6 0 3 .6 4.1 1.6L13 11h7V4l-2.5 2.5A8 8 0 0 0 12 4z"/></svg>', stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>' };
+const timeButtons = () => `<div class="timebtns"><button class="tb" id="adv-day" ${locked() || S.auto ? 'disabled' : ''}>${ICON.day}<span>1日</span></button><button class="tb main" id="adv-month" ${locked() || S.auto ? 'disabled' : ''}>${ICON.month}<span>1か月</span></button><button class="tb ${S.auto ? 'stop' : ''}" id="auto" ${locked() ? 'disabled' : ''}>${S.auto ? ICON.stop : ICON.auto}<span>${S.auto ? '止める' : '自動'}</span></button></div>`;
 function nextCard(m) {
   const a = m.assets;
-  if (m.event.status === 'paused') return `<div class="next"><h3>一時停止中です</h3><p>主催者が再開するまでお待ちください。</p></div>`;
-  if (m.account.status !== 'active') return `<div class="next">${stepLine(4)}<h3>データの最終日（${jdate(m.account.final_date)}）まで進みました</h3><p>この先の価格データは存在しないため、これ以上は進められません。記録を見たり、金額や買い方を変えてやり直したりできます。</p><div class="btns"><a class="btn pri" href="#/orders">記録を見る</a><a class="btn" href="#/more">やり直す</a></div></div>`;
-  if (S.auto) return `<div class="next">${stepLine(3)}<h3>自動で進めています</h3><p>注文の成立・失効、資金不足、新しいできごとがあると止まります。注文をするときは、いったん止めてください。</p>${timeButtons(true)}</div>`;
-  if (m.orders.length) return `<div class="next">${stepLine(3)}<h3>注文を受け付けました。日付を進めると成立します</h3><p>受付済みの注文が ${m.orders.length} 件あります。<a href="#/orders">注文を見る・取り消す</a></p>${timeButtons(true)}</div>`;
-  if (a.holdings.length || m.plans.length) return `<div class="next">${stepLine(3)}<h3>時間を進めて、値動きを見てみましょう</h3><p>${m.next_deposit_date ? `次の入金（${yen(m.event.monthly_deposit)}）は ${jdate(m.next_deposit_date)} です。` : ''}ほかの投資対象は「さがす」からえらべます。</p>${timeButtons(true)}</div>`;
-  return `<div class="next">${stepLine(1)}<h3>まず、投資対象をえらびましょう</h3><p>使えるお金は ${yen(a.available)} です。分類や値動きを見て、気になるものを開いてみてください。</p><div class="stack"><a class="btn pri" href="#/market">投資対象をさがす</a></div></div>`;
+  if (m.event.status === 'paused') return '<div class="next"><h3>一時停止中</h3><p>再開までお待ちください。</p></div>';
+  if (m.account.status !== 'active') return `<div class="next">${stepLine(4)}<h3>最終日に着きました</h3><p>${jdate(m.account.final_date)}。この先のデータはありません。</p><div class="btns"><a class="btn pri" href="#/orders">記録を見る</a><a class="btn" href="#/more">やり直す</a></div></div>`;
+  if (S.auto) return `<div class="next">${stepLine(3)}<h3>自動で進めています</h3>${timeButtons()}</div>`;
+  if (m.orders.length) return `<div class="next">${stepLine(3)}<h3>時間を進めると、注文が成立します</h3>${timeButtons()}<p class="fine" style="margin:10px 0 0"><a href="#/orders">受付済みの注文 ${m.orders.length}件</a></p></div>`;
+  if (a.holdings.length || m.plans.length) return `<div class="next">${stepLine(3)}<h3>時間を進める</h3>${timeButtons()}${m.next_deposit_date ? `<p class="fine" style="margin:10px 0 0">次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}</p>` : ''}</div>`;
+  return `<div class="next">${stepLine(1)}<h3>投資対象をえらぶ</h3><div class="stack"><a class="btn pri" id="go-market" href="#/market">さがす</a></div><details class="plain"><summary>買わずに時間だけ進める</summary><div class="in">${timeButtons()}</div></details></div>`;
 }
+// 総資産のグラフ（ホーム）。時間を進める演出では、この線を1営業日ずつ伸ばす
+function homeChartPts(series, upto) {
+  const all = series.map((s) => s.total); let lo = Math.min(...all), hi = Math.max(...all);
+  const minSpan = Math.max(2, hi * 0.04); if (hi - lo < minSpan) { const mid = (hi + lo) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; } // わずかな変化を大きな上下に見せない
+  const n = Math.max(2, series.length); const x = (i) => 4 + (i / (n - 1)) * 592, y = (v) => 110 - ((v - lo) / (hi - lo)) * 100;
+  return series.slice(0, upto).map((s, i) => `${x(i).toFixed(1)},${y(s.total).toFixed(1)}`).join(' ');
+}
+const homeChart = (series) => `<svg class="chart home" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="総資産の動き"><line x1="0" y1="119" x2="600" y2="119" stroke="#17223b" stroke-width="1"/><polyline id="homeline" points="${homeChartPts(series, series.length)}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 async function viewHome() {
-  if (!ls.get(GUIDE_KEY) && S.me.account.attempt === 1 && S.me.series.length <= 1 && !S.me.orders.length) { location.hash = '#/guide'; return; }
   const m = S.me, a = m.assets, v = $('#view'); const fin = m.account.status !== 'active';
-  const attemptJa = m.account.attempt === 1 ? '初回' : `再試行（${m.account.attempt}回目）`;
-  const stopHtml = S.stop ? `<div class="msg warn"><b>${esc(S.stop.message)}</b><br>${esc(S.stop.next)}</div>` : '';
-  const firstStep = !fin && !S.auto && !m.orders.length && !a.holdings.length && !m.plans.length && m.event.status !== 'paused';
+  const attemptJa = m.account.attempt === 1 ? '初回' : `${m.account.attempt}回目`;
+  const stopHtml = S.stop ? `<div class="msg warn"><b>${esc(S.stop.message)}</b></div>` : '';
   v.innerHTML = `${stopHtml}
-  <section class="blk"><div class="eyebrow">${fin ? '結果' : '総資産'} ・ ${attemptJa} ${Q('total')}</div>
-    <div class="figure">${num(a.total)}<small>円</small></div>
-    <div style="margin-top:6px">${plLabel(a.pnl)} <span class="fine">税引前 ${Q('pretax')}</span></div>
+  <section class="blk hero"><div class="eyebrow">${fin ? '結果' : '総資産'} ${Q('total')} <span class="tag">${attemptJa}</span></div>
+    <div class="figure"><span id="fig">${num(a.total)}</span><small>円</small></div>
+    <div class="heroline"><span id="figpl">${plLabel(a.pnl)}</span> <span class="fine">税引前</span> <span id="figdelta"></span></div>
+    ${homeChart(m.series)}
     <dl class="pair"><div><dt>使えるお金 ${Q('buying')}</dt><dd>${yen(a.available)}</dd></div><div><dt>入金した合計</dt><dd>${yen(a.deposits)}</dd></div></dl>
-    ${fin ? `<p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>` : ''}
   </section>
   ${nextCard(m)}
   ${eventsHtml(S.last)}
-  ${a.holdings.length ? `<section class="blk"><h2>持っている投資対象</h2><div class="rows">${a.holdings.map((h) => { const u = h.type === 'fund' ? '口' : '株'; return `<a class="row" href="#/i/${esc(h.instrument_id)}"><div class="grow"><div class="nm">${esc(h.name)}</div><div class="fine">${num(h.qty)}${u}${h.unsettled_qty ? `（うち受渡前 ${num(h.unsettled_qty)}${u}）` : ''}${h.stale ? ' <span class="tag prov">価格更新なし</span>' : ''}</div></div><div class="r"><b>${yen(h.value)}</b><div class="fine">${plLabel(h.pnl)}</div></div></a>`; }).join('')}</div></section>` : ''}
-  ${m.series.length > 1 ? `<section class="blk"><h2>総資産の動き</h2>${chart(m.series.map((s) => [s.date, s.total]), { label: '総資産の推移' })}</section>` : ''}
-  ${firstStep ? `<section class="blk"><h2>時間だけ進める</h2><p class="sub">何も買わずに日付を進めることもできます。</p>${timeButtons(false)}</section>` : ''}
+  ${a.holdings.length ? `<section class="blk"><h2>持っているもの</h2><div class="rows">${a.holdings.map((h) => { const u = h.type === 'fund' ? '口' : '株'; return `<a class="row" href="#/i/${esc(h.instrument_id)}">${seal(h.category)}<div class="grow"><div class="nm">${esc(shortName(h.name))}</div><div class="fine">${num(h.qty)}${u}${h.unsettled_qty ? '・受渡前あり' : ''}${h.stale ? ' <span class="tag prov">価格更新なし</span>' : ''}</div></div><div class="r">${spark(h.spark)}<div><b>${yen(h.value)}</b></div><div class="fine">${plLabel(h.pnl)}</div></div></a>`; }).join('')}</div></section>` : ''}
   <section class="blk" style="padding-bottom:0">
-    <details ${fin ? 'open' : ''}><summary>お金の内訳と資産配分</summary><div class="in"><table>
+    <details ${fin ? 'open' : ''}><summary>内訳と資産配分</summary><div class="in"><table>
       <tr><th>現金残高</th><td class="n">${yen(a.cash)}</td></tr><tr><th>うち注文のために確保中</th><td class="n">${yen(a.reserved)}</td></tr><tr><th>受渡を待っている買付代金 ${Q('settle')}</th><td class="n">${yen(a.payable_purchase)}</td></tr>
       <tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}</table>
-      ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(r.name)} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
+      ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(shortName(r.name))} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
       <h3>資産配分</h3>${allocHtml(m.allocation)}</div></details>
-    <details><summary>これまでのできごと${m.news.length ? `　${m.news.length}件` : ''}</summary><div class="in"><p class="fine">その日までに公表されていたものだけを表示します。</p>${newsList(m.news.slice(0, 3))}${m.news.length > 3 ? '<p><a href="#/news">すべて見る</a></p>' : ''}</div></details>
-    ${fin ? `<div style="padding-top:16px"><h2>ご利用上の注意</h2>${discHtml()}</div>` : ''}
-  </section>
-  <p class="fine" style="margin-top:18px">${periodLine(m.event.data)} いまの日付は<b>シミュレーション上の日付</b>で、実際の今日ではありません。${Object.values(m.event.provisional || {}).some(Boolean) ? '一部の設定は仮設定です。' : ''}</p>`;
+    <details><summary>これまでのできごと${m.news.length ? `　${m.news.length}件` : ''}</summary><div class="in">${newsList(m.news.slice(0, 3))}${m.news.length > 3 ? '<p><a href="#/news">すべて見る</a></p>' : ''}</div></details>
+    ${fin ? `<div style="padding-top:16px"><p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p><h2>ご利用上の注意</h2>${discHtml()}</div>` : ''}
+  </section>`;
   $('#adv-day')?.addEventListener('click', () => advance('day')); $('#adv-month')?.addEventListener('click', () => advance('month'));
   $('#auto')?.addEventListener('click', () => (S.auto ? stopAuto(true) : startAuto()));
+}
+// 時間が進む演出: 進めた営業日を1日ずつ、日付・総資産・グラフ・期間の進み具合に反映する（表示するのはサーバーが返した各日の実績だけ）
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+async function playTime(fromDate) {
+  const series = S.me.series; const start = series.findIndex((s) => s.date === fromDate); const line = $('#homeline'), fig = $('#fig');
+  if (start < 0 || start >= series.length - 1 || !line || !fig) return;
+  const first = series[start], last = series[series.length - 1]; const steps = series.length - 1 - start;
+  if (!reduceMotion()) {
+    S.playing = true; document.body.classList.add('ticking'); coachEl.hidden = true;
+    // 経過時間から「いま何日目を見せるか」を決める（端末が遅くても全体の長さは変わらず、途中の日を飛ばすだけ）
+    const dur = Math.max(600, Math.min(1500, 500 + steps * 45)); const t0 = Date.now();
+    const frame = () => new Promise((r) => { let done = false; const f = () => { if (!done) { done = true; r(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
+    for (;;) {
+      const k = Math.min(steps, Math.max(1, Math.ceil(((Date.now() - t0) / dur) * steps))); const s = series[start + k];
+      setClock(s.date); fig.textContent = num(s.total); line.setAttribute('points', homeChartPts(series, start + k + 1));
+      if (k >= steps || !onHome()) break;
+      await frame();
+    }
+    document.body.classList.remove('ticking'); S.playing = false;
+  }
+  setClock(last.date);
+  const d = last.total - first.total, dep = last.deposits - first.deposits; const el = $('#figdelta');
+  if (el) el.innerHTML = `<span class="delta ${d - dep > 0 ? 'pos' : d - dep < 0 ? 'neg' : ''}">この間 ${signYen(d)}${dep ? `（うち入金 ${yen(dep)}）` : ''}</span>`;
+  coachSoon();
 }
 async function advance(mode) {
   if (S.busy) return; S.busy = true;
   document.querySelectorAll('#adv-day,#adv-month').forEach((b) => { b.disabled = true; });
-  const body = { request_id: rid(), expected_sim_date: S.me.account.sim_date, mode };
+  const from = S.me.account.sim_date; buzz();
+  const body = { request_id: rid(), expected_sim_date: from, mode };
   try {
     let r;
     try { r = await api('POST', '/api/advance', body); } catch (e) {
@@ -309,29 +384,32 @@ async function advance(mode) {
     }
     S.last = r.events; S.stop = r.stop && r.stop.reason !== 'end' && mode !== 'day' ? r.stop : null;
     if (!S.auto && !onHome()) r.events.slice(-2).forEach((e) => toast(e.text)); // ホームでは「進めた間の出来事」に同じ内容が出るため、重ねて通知しない
-    await refresh(); if (onHome()) await viewHome();
+    S.playing = onHome() && !reduceMotion(); // 演出が終わるまで、ヘッダーの日付を先に進めない
+    await refresh(); if (onHome()) { await viewHome(); await playTime(from); } else S.playing = false;
+    if (r.events.some((e) => e.type === 'order_filled')) buzz(30);
     return r;
   } catch (e) {
-    if (e.status === 409) { S.stop = { message: '画面の日付が古くなっていました', next: '最新の状態に更新しました。もう一度操作してください' }; await route(); }
+    S.playing = false;
+    if (e.status === 409) { S.stop = { message: '画面の日付が古くなっていました。最新の状態に更新しました', next: '' }; await route(); }
     else if (e.unknown) { toast('通信結果が未確認です。通信が戻ったら画面を更新して日付を確認してください（二重には進みません）'); if (onHome()) viewHome(); }
     else if (!e.ended) toast(e.message);
     return null;
   } finally { S.busy = false; }
 }
-function startAuto() { S.auto = true; S.stop = null; viewHome(); const tick = async () => { if (!S.auto) return; const r = await advance('month'); if (!r || r.stop || S.me.account.status !== 'active') { stopAuto(); if (onHome()) viewHome(); return; } S.autoTimer = setTimeout(tick, 1200); }; tick(); }
+function startAuto() { S.auto = true; S.stop = null; viewHome(); const tick = async () => { if (!S.auto) return; const r = await advance('month'); if (!r || r.stop || S.me.account.status !== 'active') { stopAuto(); if (onHome()) viewHome(); return; } S.autoTimer = setTimeout(tick, 250); }; tick(); }
 function stopAuto(rerender) { S.auto = false; clearTimeout(S.autoTimer); if (rerender) viewHome(); }
 
 // ---------- さがす ----------
 let marketState = { q: '', cat: '' };
 async function viewMarket() {
   const r = await api('GET', `/api/instruments?q=${encodeURIComponent(marketState.q)}&category=${encodeURIComponent(marketState.cat)}`);
-  $('#view').innerHTML = `<h1>投資対象をさがす</h1><p class="fine">特定の商品をすすめるものではありません。並びは登録順です。</p>
+  $('#view').innerHTML = `<h1>さがす</h1>
   <div class="chips" role="group" aria-label="分類">${['', ...r.categories].map((c) => `<button class="chip ${marketState.cat === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c || 'すべて')}</button>`).join('')}</div>
-  <label for="q" class="sub" style="font-weight:400">名前で検索</label><input id="q" type="search" value="${esc(marketState.q)}" placeholder="例: 株式">
-  <div class="rows" style="margin-top:16px">${r.items.length ? r.items.map((i) => { const chg = i.prev_close_milli ? i.price_milli - i.prev_close_milli : 0; return `<a class="row" href="#/i/${esc(i.id)}"><div class="grow"><div class="cat">${esc(i.category)}</div><div class="nm">${esc(i.name)}</div>${i.qty ? `<div class="fine">保有 ${num(i.qty)}${i.type === 'fund' ? '口' : '株'}（${yen(i.value)}）</div>` : ''}</div><div class="r"><b>${milli(i.price_milli)}</b><span class="fine">円</span><div class="fine">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div></div></a>`; }).join('') : '<p class="sub" style="padding:16px 0">該当する投資対象がありません。</p>'}</div>
-  <p class="fine">投資信託の価格は、1万口あたりの基準価額です。${Q('nav')}</p>`;
-  let t; const qi = $('#q'); if (marketState.focus) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); marketState.focus = false; }
-  qi.addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { marketState.q = e.target.value; marketState.focus = true; viewMarket(); }, 400); });
+  <div class="rows" style="margin-top:12px">${r.items.length ? r.items.map((i) => { const chg = i.prev_close_milli ? i.price_milli - i.prev_close_milli : 0; return `<a class="row" href="#/i/${esc(i.id)}">${seal(i.category)}<div class="grow"><div class="cat">${esc(i.category)}</div>${nameHtml(i.name)}${i.qty ? `<div class="fine"><span class="tag fill">保有中</span> ${yen(i.value)}</div>` : ''}</div><div class="r">${spark(i.spark)}<div><b>${milli(i.price_milli)}</b><span class="fine">円</span></div><div class="fine">${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div></div></a>`; }).join('') : '<p class="sub" style="padding:16px 0">該当する投資対象がありません。</p>'}</div>
+  <details class="plain"><summary>名前で検索</summary><div class="in"><input id="q" type="search" aria-label="名前で検索" value="${esc(marketState.q)}" placeholder="例: 株式"></div></details>
+  <p class="fine">価格は1万口あたりの基準価額 ${Q('nav')}。小さなグラフは直近30営業日。特定の商品をすすめるものではありません（並びは登録順）。</p>`;
+  let tm; const qi = $('#q'); if (marketState.q || marketState.focus) { qi.closest('details').open = true; } if (marketState.focus) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); marketState.focus = false; }
+  qi.addEventListener('input', (e) => { clearTimeout(tm); tm = setTimeout(() => { marketState.q = e.target.value; marketState.focus = true; viewMarket(); }, 400); });
   document.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { marketState.cat = b.dataset.cat; viewMarket(); }));
 }
 
@@ -341,11 +419,11 @@ async function viewInstrument(id) {
   const d = await api('GET', '/api/instruments/' + encodeURIComponent(id)); const isFund = d.type === 'fund'; const t = d.terms; const u = isFund ? '口' : '株';
   const chg = d.prev_close_milli ? d.price_milli - d.prev_close_milli : 0;
   $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/market">‹ さがすへ戻る</a></p>
-  <section class="blk" style="padding-top:8px"><div class="eyebrow">${esc(d.category)}</div><h1 style="margin-top:4px">${esc(d.name)}</h1><p class="sub">${esc(d.description)}</p>
+  <section class="blk" style="padding-top:8px"><div class="namehead">${seal(d.category)}<div><div class="eyebrow">${esc(d.category)}</div><h1 style="margin:2px 0 0">${esc(shortName(d.name))}</h1></div></div>${shortName(d.name) !== d.name ? `<p class="fine" style="margin:4px 0 0">${esc(d.name)}</p>` : ''}<p class="sub">${esc(d.description)}</p>
     <div class="fine" style="margin-top:14px">${d.stale ? '最後に価格がついた日の' : ''}${isFund ? '基準価額（1万口あたり）' : '終値'}・${jdate(d.price_date)} ${isFund ? Q('nav') : ''}</div>
     <div class="figure md">${milli(d.price_milli)}<small>円</small></div><div class="fine">前日比 ${chg > 0 ? '▲ +' : chg < 0 ? '▼ −' : '― '}${milli(Math.abs(chg))}</div>
     <div style="margin-top:14px">${chart(d.series.map((s) => [s[0], s[1] / 1000]), { label: '価格推移' })}</div>
-    <p class="fine">シミュレーション上の日付（${jdate(S.me.account.sim_date)}）までの実績のみ表示しています。過去を順番に体験するための表示で、この先の値動きを示唆・予測するものではありません。</p>
+    <p class="fine">${jdate(S.me.account.sim_date)} までの実績です。この先は表示しません（過去を順番に体験するための表示で、この先の値動きを示唆・予測するものではありません）。</p>
     ${d.holding ? `<div class="msg"><b>保有中</b>　${num(d.holding.qty)}${u}（買った金額 ${yen(d.holding.cost)}）<br><span class="fine">売れる数量 ${num(d.sellable)}${u}${d.holding.unsettled_qty > 0 ? '。受渡前の買付分は受渡日まで売れません' : ''}</span></div>` : ''}
     <div class="seg" role="group" aria-label="操作"><button data-mode="buy">買う</button><button data-mode="sell" ${d.holding ? '' : 'disabled style="opacity:.4"'}>売る</button>${isFund && t.savings_ok ? '<button data-mode="plan">積立</button>' : ''}</div><div id="orderpanel"></div>
   </section>
@@ -407,13 +485,15 @@ function previewHtml(i, d) {
     else rows.push(['株数', num(i.qty) + '株'], ['参考金額（現在の終値 × 株数）', yen(i.reference_amount)], ['注文中に確保する金額（値上がりに備えた余裕を含む）', yen(i.reserve)], ['手数料（見込み）', yen(i.fee_estimate)]);
   } else rows.push([isFund ? '売却口数' : '売却株数', num(i.qty) + (isFund ? '口' : '株')]);
   const sd = i.settle_date === '9999-12-31' ? '期間外（期間内には受渡されません）' : jdate(i.settle_date);
-  rows.push(['成立する予定の日', jdate(i.exec_date) + (isFund ? '（この日の基準価額）' : '（この日の始値）')],
-    i.side === 'sell' ? ['代金を受け取る日', sd + '（それまで買付に使えません）'] : ['受渡の予定日（売れるようになる日）', sd], ['取消できる期限', '日付を進める前まで']);
-  return `<table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td class="n">${esc(v)}</td></tr>`).join('')}</table>`;
+  rows.push(['成立する日', jdate(i.exec_date)]);
+  const more = [['成立する価格', isFund ? 'この日の基準価額（いまは分かりません）' : 'この日の始値（いまは分かりません）'], i.side === 'sell' ? ['代金を受け取る日', sd + '（それまで買付に使えません）'] : ['受渡の予定日（売れるようになる日）', sd], ['取消できる期限', '日付を進める前まで'], ['使えるお金', yen(i.available)]];
+  if (i.side === 'buy' && isFund) more.push(['注文中に確保する金額', yen(i.reserve)]);
+  const tr = ([k, v]) => `<tr><th>${esc(k)}</th><td class="n">${esc(v)}</td></tr>`;
+  return `<table>${rows.map(tr).join('')}</table><details class="plain"><summary>くわしく</summary><div class="in"><table>${more.map(tr).join('')}</table></div></details>`;
 }
 function orderConfirm(d, p) {
   const i = ord.preview.info;
-  p.innerHTML = `<div class="card">${orderSteps(2)}<h3>${esc(d.name)} を${i.side === 'buy' ? '買う' : '売る'}</h3>${previewHtml(i, d)}
+  p.innerHTML = `<div class="card">${orderSteps(2)}<h3>${esc(shortName(d.name))} を${i.side === 'buy' ? '買う' : '売る'}</h3>${previewHtml(i, d)}
   <p class="fine">価格は成立する日まで決まりません。${i.side === 'buy' && d.type !== 'fund' ? '成行買いでは、確保額を超えて値上がりした場合は成立せず失効します。' : ''}</p>
   <div id="ordmsg"></div><div class="stack"><button class="btn pri" id="submit">この内容で注文する</button><button class="btn quiet" id="back">戻る</button></div></div>`;
   // onclick（代入）で設定し、状態に応じて置き換える。addEventListener だと古い送信処理が残り二重送信になる
@@ -445,8 +525,7 @@ async function checkPending(d, p) {
   $('#submit').textContent = '同じ内容で送信する'; $('#submit').disabled = false; $('#submit').onclick = () => { $('#submit').disabled = true; sendPending(d, p); };
 }
 function orderResult(d, p) {
-  const i = ord.result.info; p.innerHTML = `<div class="card">${orderSteps(3)}<div class="msg ok"><b>${esc(ord.result.message)}</b>${ord.result.replayed ? '（同じ注文の結果を確認しました）' : ''}</div>
-  <p>まだ成立していません。<b>${jdate(i.exec_date)}</b> の価格で成立する予定です。ホームで日付を進めてください。</p>
+  const i = ord.result.info; buzz(25); p.innerHTML = `<div class="card done">${orderSteps(3)}<div class="stampwrap"><span class="stamp" role="img" aria-label="受付済み">受付</span><div><b>${esc(ord.result.message)}</b>${ord.result.replayed ? '（同じ注文の結果を確認しました）' : ''}<div class="fine">${jdate(i.exec_date)} の価格で成立する予定（まだ成立していません）</div></div></div>
   <div class="stack"><a class="btn pri" href="#/home">ホームで時間を進める</a><button class="btn quiet" id="again">続けて別の注文をする</button></div></div>`;
   $('#again').addEventListener('click', () => { ord = null; viewInstrument(d.id); });
 }
@@ -475,7 +554,7 @@ function planPanel(d, p) {
     p.innerHTML = `<div class="card">${orderSteps(2)}<h3>${esc(d.name)} の積立</h3><table><tr><th>毎月の金額</th><td class="n">${yen(amount)}</td></tr><tr><th>買う日</th><td class="n">毎月${dom}日以降の最初の営業日</td></tr><tr><th>最初の注文</th><td class="n">${Y}年${M}月</td></tr><tr><th>適用される価格</th><td class="n">注文の${d.terms.nav_offset}営業日後の基準価額</td></tr></table><div id="pmsg"></div><div class="stack"><button class="btn pri" id="pok">この内容で設定する</button><button class="btn quiet" id="pback">戻る</button></div></div>`;
     $('#pback').onclick = () => planPanel(d, p);
     $('#pok').onclick = async () => { $('#pok').disabled = true; try { await doPost('/api/plans', { instrument_id: d.id, amount, day_of_month: dom }); await refresh();
-      p.innerHTML = `<div class="card">${orderSteps(3)}<div class="msg ok"><b>積立を設定しました</b></div><p>日付が進むと、毎月自動で注文が出ます。</p><div class="stack"><a class="btn pri" href="#/home">ホームで時間を進める</a></div></div>`;
+      buzz(25); p.innerHTML = `<div class="card done">${orderSteps(3)}<div class="stampwrap"><span class="stamp" role="img" aria-label="設定済み">設定</span><div><b>積立を設定しました</b><div class="fine">日付が進むと、毎月自動で注文が出ます</div></div></div><div class="stack"><a class="btn pri" href="#/home">ホームで時間を進める</a></div></div>`;
     } catch (e) { if (e.unknown) $('#pmsg').innerHTML = '<div class="msg warn">結果が未確認です。画面を更新して設定を確認してください。重複して設定されることはありません。</div>'; else if (!e.ended) { $('#pmsg').innerHTML = `<div class="msg err">⚠ ${esc(e.message)}</div>`; $('#pok').disabled = false; } } };
   };
 }
@@ -525,7 +604,7 @@ async function viewMore() {
     <label for="r-mon">毎月入ってくる金額</label><div class="yenin"><input id="r-mon" inputmode="numeric" value="${num(m.event.monthly_deposit)}"></div>
     <p class="fine">金額を変えなければ、同じ条件でのやり直しになります。最初 0〜${yen(L.initial_max)}、毎月 0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>
     <div id="rsmsg"></div><div class="stack"><button class="btn" id="restart" ${m.event.status === 'paused' ? 'disabled' : ''}>結果を保存してやり直す</button></div></section>
-  <section class="blk"><h2>使い方</h2><div class="stack"><a class="btn quiet" href="#/guide">使い方をもう一度見る</a></div></section>
+  <section class="blk"><h2>ガイド</h2><p class="sub">押す場所を、画面の上に表示します。</p><div class="stack"><button class="btn quiet" id="reguide">ガイドをもう一度表示する</button></div></section>
   <section class="blk" style="padding-bottom:0"><h2>このシミュレーターについて</h2>
     <details><summary>ご利用上の注意</summary><div class="in">${discHtml()}</div></details>
     <details><summary>再現していること・データの出典</summary><div class="in"><ul><li>${m.event.data.kind === 'dev_test' ? '開発用の架空データ' : '出典を確認した過去の実データ（基準価額・価格、分配金・配当、分割）'}。期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.event.period.end)}。仮定の利回り・乱数・予測による価格は使っていません</li><li>投資信託は金額指定の購入・売却・積立。株式・ETF（データに含まれる場合）は成行のみ・翌営業日の始値で約定</li><li>購入単位・手数料・信託財産留保額・受渡日（商品条件。現在の条件を過去の期間に適用）</li></ul>
@@ -533,6 +612,7 @@ async function viewMore() {
     <details><summary>用語</summary><div class="in">${Object.keys(TERMS).map((k) => `<p><b>${esc(TERMS[k][0])}</b><br><span class="sub">${esc(TERMS[k][1])}</span></p>`).join('')}</div></details>
     <details><summary>データの扱い</summary><div class="in"><p class="sub">氏名・メールアドレスなどは取得しません。はじめの質問への回答はこの端末の中だけで使い、サーバーには2つの金額だけを送ります。参加データは説明会終了の ${m.event.retention_hours} 時間後に自動削除されます。端末に残った画面表示（スクリーンショット等）は回収できません。</p><p class="fine">版: アプリ ${esc(m.event.app_version)} ／ 計算仕様 ${esc(m.event.calc_spec_version)}</p></div></details>
   </section>`;
+  $('#reguide').addEventListener('click', () => { ls.del(GUIDE_KEY); S.guideForce = true; location.hash = '#/home'; });
   $('#restart').addEventListener('click', async () => {
     const rd = (id) => { const raw = $('#' + id).value.replace(/[,\s円]/g, ''); return /^\d+$/.test(raw) ? Number(raw) : NaN; };
     const ic = rd('r-init'), md = rd('r-mon'); const msg = (t) => { $('#rsmsg').innerHTML = `<div class="msg err">⚠ ${esc(t)}</div>`; };

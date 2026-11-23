@@ -117,12 +117,18 @@ function mutate(db, ctx0, body, fn) {
 // ---------- 読み出し ----------
 function nextMonthStart(ds, d) { return ds.calendar.find((x) => x > d && x.slice(0, 7) !== d.slice(0, 7)) || null; }
 
+// 直近の値動き（小グラフ用）。その参加者の日付以前の実在する価格だけを返す
+function sparkOf(ds, instId, simDate, n = 30) {
+  const mp = ds.prices.get(instId); const out = []; if (!mp) return out;
+  for (let i = ds.calIdx.get(simDate); i >= 0 && out.length < n; i--) { const r = mp.get(ds.calendar[i]); if (r && r.close > 0) out.push(r.close); }
+  return out.reverse();
+}
 function instBrief(ds, db, acc, inst, holdMap) {
   const p = E.lastPrice(ds, inst.id, acc.sim_date);
   const idx = ds.calIdx.get(acc.sim_date); let prevClose = null;
   for (let i = idx - 1; i >= 0 && prevClose == null; i--) prevClose = ds.prices.get(inst.id)?.get(ds.calendar[i])?.close || null;
   const h = holdMap.get(inst.id);
-  return { id: inst.id, type: inst.type, name: inst.name, category: inst.category, description: inst.description, price_milli: p?.close ?? null, price_date: p?.date ?? null, stale: !!p?.stale, prev_close_milli: prevClose, qty: h?.qty || 0, value: h ? E.lineValue(inst, h.qty, p?.close || 0) : 0 };
+  return { id: inst.id, type: inst.type, name: inst.name, category: inst.category, description: inst.description, price_milli: p?.close ?? null, price_date: p?.date ?? null, stale: !!p?.stale, prev_close_milli: prevClose, spark: sparkOf(ds, inst.id, acc.sim_date), qty: h?.qty || 0, value: h ? E.lineValue(inst, h.qty, p?.close || 0) : 0 };
 }
 
 function me(db, ctx, nowMs) {
@@ -145,7 +151,7 @@ function me(db, ctx, nowMs) {
     server_now: iso(nowMs),
     event: { name: ev.name, status: st, status_ja: STATUS_JA[st], ends_at: ev.ends_at, retention_hours: ev.retention_hours, env: cfg.ENV, data: dataInfo(db, ev), provisional: JSON.parse(ev.provisional_json), ...fundsOf(ev, acc), funds_limits: cfg.FUNDS, period: { start: E.startDate(ds, ev), end: fin }, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION },
     account: { attempt: acc.attempt, status: acc.status, sim_date: acc.sim_date, final_date: fin, version: acc.version },
-    assets: { ...v, holdings: v.holdings.map((h) => ({ ...h, name: nm(h.instrument_id), type: ds.instruments.get(h.instrument_id).type })) },
+    assets: { ...v, holdings: v.holdings.map((h) => ({ ...h, name: nm(h.instrument_id), type: ds.instruments.get(h.instrument_id).type, category: ds.instruments.get(h.instrument_id).category, spark: sparkOf(ds, h.instrument_id, acc.sim_date) })) },
     allocation, series, news: news.slice(0, 20), orders, plans, receivables: recv,
     next_deposit_date: fundsOf(ev, acc).monthly_deposit > 0 && acc.sim_date < fin ? nextMonthStart(ds, acc.sim_date) : null,
     disclaimers: cfg.DISCLAIMERS,

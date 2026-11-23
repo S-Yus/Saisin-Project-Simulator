@@ -144,3 +144,53 @@ dialog::backdrop{background:rgba(23,34,59,.45)}
 .toast{background:var(--ink);color:#fff;padding:10px 14px;border-radius:6px;font-size:.88rem}
 ul,ol{padding-left:1.3em;margin:8px 0}li{margin:4px 0}
 @media (prefers-reduced-motion:reduce){.prog span{transition:none}}
+
+/* ---- 0.5: 時間の流れ・押す場所のガイド・記号 ---- */
+.hdr-r{text-align:right}
+.period{font-size:.7rem;color:var(--pri);font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.timeline{max-width:640px;margin:0 auto;padding:0 20px 8px;display:flex;align-items:center;gap:10px}
+.timeline .track{flex:1;height:4px;background:var(--rule);position:relative}
+.timeline .track span{position:absolute;left:0;top:0;bottom:0;background:var(--pri);width:0}
+.timeline .track span::after{content:"";position:absolute;right:-5px;top:-4px;width:12px;height:12px;border-radius:50%;background:var(--pri);border:2px solid var(--paper)}
+.tmonth{font-size:.7rem;color:var(--sub);white-space:nowrap;font-variant-numeric:tabular-nums}
+body.ticking .simdate{color:var(--pri)}
+body.ticking header#top{box-shadow:0 2px 0 var(--pri)}
+body.ticking .tb{opacity:.5}
+.hero .figure{font-size:2.9rem}
+.heroline{margin-top:4px;min-height:1.8em}
+.delta{display:inline-block;font-size:.8rem;font-weight:700;padding:1px 8px;border-radius:3px;background:var(--tint);color:var(--pri);margin-left:4px;animation:pop .35s ease-out}
+.delta.neg{background:var(--errbg);color:var(--loss)}
+svg.chart.home{height:96px;margin-top:12px}
+.next h3{font-size:1.25rem}
+/* 時間を進めるボタン（記号＋短いことば） */
+.timebtns{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px;margin-top:12px}
+.tb{appearance:none;border:1.5px solid var(--pri);background:var(--surface);color:var(--pri);border-radius:6px;min-height:64px;font:inherit;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:transform .08s}
+.tb svg{width:22px;height:22px;fill:currentColor}
+.tb.main{background:var(--pri);color:#fff}
+.tb.stop{border-color:var(--loss);color:var(--loss)}
+.tb:disabled{opacity:.45;cursor:not-allowed}
+.btn,.chip,.seg button{transition:transform .08s}
+.btn:active:not(:disabled),.tb:active:not(:disabled),.chip:active,.seg button:active{transform:scale(.97)}
+details.plain{border:0;margin-top:8px}details.plain>summary{font-weight:600;font-size:.86rem;color:var(--sub);padding:8px 0;min-height:40px}
+/* 分類の印 */
+.seal{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--pri);color:var(--pri);display:inline-grid;place-items:center;font-family:var(--serif);font-weight:600;font-size:1.05rem;background:var(--surface)}
+.namehead{display:flex;gap:12px;align-items:center;margin-top:8px}
+.row .official{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+svg.spark{width:64px;height:24px;display:block;margin-left:auto}
+/* 受付の印 */
+.stampwrap{display:flex;gap:14px;align-items:center;margin:14px 0}
+.stamp{flex:0 0 auto;width:64px;height:64px;border-radius:50%;border:3px double #c8452e;color:#c8452e;display:grid;place-items:center;font-family:var(--serif);font-weight:700;font-size:1.15rem;letter-spacing:.1em;transform:rotate(-10deg);animation:stamp .4s cubic-bezier(.2,1.6,.4,1)}
+@keyframes stamp{0%{transform:rotate(-10deg) scale(2.2);opacity:0}60%{opacity:1}100%{transform:rotate(-10deg) scale(1);opacity:1}}
+@keyframes pop{0%{transform:scale(.8);opacity:0}100%{transform:scale(1);opacity:1}}
+/* 押す場所のガイド */
+#coach{position:absolute;left:0;top:0;width:0;height:0;z-index:8;pointer-events:none}
+#coach .ring{position:absolute;border:3px solid #e0a100;border-radius:10px;box-shadow:0 0 0 4px rgba(224,161,0,.25);animation:ring 1.2s ease-in-out infinite}
+#coach .tip{position:absolute;display:flex;align-items:center;gap:6px;background:var(--ink);color:#fff;font-weight:700;font-size:.9rem;padding:8px 8px 8px 14px;border-radius:6px;white-space:nowrap;max-width:220px;pointer-events:auto}
+#coach .tip::after{content:"";position:absolute;left:22px;bottom:-7px;border:7px solid transparent;border-top-color:var(--ink);border-bottom:0}
+#coach .tip.below::after{bottom:auto;top:-7px;border:7px solid transparent;border-bottom-color:var(--ink);border-top:0}
+#coach-x{background:none;border:0;color:#fff;opacity:.7;font-size:1.1rem;line-height:1;padding:4px 6px;cursor:pointer}
+@keyframes ring{0%,100%{box-shadow:0 0 0 4px rgba(224,161,0,.25)}50%{box-shadow:0 0 0 10px rgba(224,161,0,.08)}}
+/* 下のメニューに記号 */
+nav#tabs a{display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 2px 8px;font-size:.72rem}
+nav#tabs a svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){.stamp,.delta,#coach .ring{animation:none}.btn,.tb,.chip{transition:none}}

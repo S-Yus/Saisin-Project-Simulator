@@ -17,17 +17,22 @@
       <div class="lbl">シミュレーション上の日付 <button class="q" data-term="simdate" aria-label="シミュレーション上の日付の説明">?</button></div>
       <div id="simdate" class="simdate">-</div>
     </div>
-    <button id="btn-notice" class="linkbtn">ご利用上の注意</button>
+    <div class="hdr-r">
+      <div id="period" class="period">-</div>
+      <button id="btn-notice" class="linkbtn">ご利用上の注意</button>
+    </div>
   </div>
+  <div class="timeline" aria-hidden="true"><div class="track"><span id="tprog"></span></div><div id="tmonth" class="tmonth">-</div></div>
 </header>
 <div id="statusbar" role="status" hidden></div>
 <main id="view" tabindex="-1"></main>
 <nav id="tabs" hidden aria-label="メニュー">
-  <a href="#/home" data-t="home">ホーム</a>
-  <a href="#/market" data-t="market">さがす</a>
-  <a href="#/orders" data-t="orders">記録</a>
-  <a href="#/more" data-t="more">メニュー</a>
+  <a href="#/home" data-t="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>ホーム</a>
+  <a href="#/market" data-t="market"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l5 5"/></svg>さがす</a>
+  <a href="#/orders" data-t="orders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>記録</a>
+  <a href="#/more" data-t="more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>メニュー</a>
 </nav>
+<div id="coach" hidden><div class="ring"></div><div class="tip"><span></span><button id="coach-x" aria-label="ガイドを消す">×</button></div></div>
 <dialog id="dlg"><div id="dlgbody"></div><form method="dialog"><button class="btn quiet sm" style="margin-top:12px">閉じる</button></form></dialog>
 <div id="toasts" aria-live="polite"></div>
 <script src="/app.js"></script>

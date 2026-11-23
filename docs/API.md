@@ -1,4 +1,4 @@
-# API仕様（アプリ 0.4.0）
+# API仕様（アプリ 0.5.0）
 
 すべて JSON。応答には `Cache-Control: no-store` と CSP 等のヘッダーが付く。日付は `YYYY-MM-DD`（シミュレーション上の日付）、日時は ISO 8601（実際の時刻・UTC）。金額は円の整数、価格は 1/1000 円の整数（`*_milli`）。
 
@@ -44,7 +44,7 @@
 | `GET /api/event?code=` | 開催回の公開情報: `name, status, status_ja, starts_at, ends_at, server_now, joinable, funds{defaults{initial_cash, monthly_deposit}, limits{initial_max, monthly_max, step}}, data_ready, data{kind, period{start,end}, pending[]（未確定のまま動いている項目）, license_confirmed, sources[]}, retention_hours, disclaimers[], env`。認証不要 |
 | `POST /api/join` `{code, initial_cash?, monthly_deposit?}` | 参加。開催中のみ。`{token}` を返す。定員超過は 429。金額は参加者が選んだ資金条件（円・整数、最初 0〜1,000万・毎月 0〜30万・1,000円単位・両方0は不可。範囲外は 422）。省略時は開催回の既定値。**質問への回答（学年・収入・支出）は送らない** |
 | `GET /api/me` | 口座の全体像（下記） |
-| `GET /api/instruments?q=&category=` | 一覧: `items[{id,type,name,category,description,price_milli,price_date,stale,prev_close_milli,qty,value}], categories[]` |
+| `GET /api/instruments?q=&category=` | 一覧: `items[{id,type,name,category,description,price_milli,price_date,stale,prev_close_milli,spark[]（直近30営業日の価格。その参加者の日付まで）,qty,value}], categories[]` |
 | `GET /api/instruments/{id}` | 詳細: 上記＋`series[[date, close_milli]]`（日付以前のみ）, `terms`, `source`, `holding`, `sellable`, `plan`, `available`, `open_orders[]` |
 | `GET /api/history?attempt=` | `orders[], ledger[], plans[]`。`attempt` は本人の過去の試行（閲覧専用） |
 | `GET /api/compare` | 本人の試行の比較（共通の日付時点。順位なし）。各試行の `conditions{initial_cash, monthly_deposit}` と `same_conditions` を返す |
@@ -63,7 +63,7 @@
 | `server_now` | サーバーの実時刻 |
 | `event` | `name, status, ends_at, retention_hours, env, data{kind, period, license_confirmed, sources[]}, provisional, initial_cash, monthly_deposit（この口座の資金条件）, funds_limits{initial_max, monthly_max, step}, period{start,end}, app_version, calc_spec_version` |
 | `account` | `attempt, status(active/finished/saved), sim_date, final_date, version` |
-| `assets` | `cash, reserved, payable_purchase, available, holdings_value, receivable_sale, receivable_dividend, total, deposits, pnl, holdings[{instrument_id,name,type,qty,unsettled_qty,sellable_qty,cost,price_milli,price_date,stale,value,pnl}]` |
+| `assets` | `cash, reserved, payable_purchase, available, holdings_value, receivable_sale, receivable_dividend, total, deposits, pnl, holdings[{instrument_id,name,type,category,spark[],qty,unsettled_qty,sellable_qty,cost,price_milli,price_date,stale,value,pnl}]` |
 | `allocation` | 分類別の評価額と現金等: `[{label, value, pct_bp}]`（合計＝総資産） |
 | `series` | 日次の `{date,total,deposits}` |
 | `news` | 日付以前に公表されたもの（新しい順・最大20件） |
