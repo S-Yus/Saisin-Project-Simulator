@@ -58,6 +58,8 @@
 | `POST /api/restart` `{request_id, initial_cash?, monthly_deposit?}` | 結果を保存してやり直す（10回まで）。金額を省略すれば同じ条件、指定すれば条件を変える |
 
 ### `GET /api/me` の主な項目
+- `nisa{gain, tax, after_tax, rate_text, annual_limit, over_limit_years[{year, bought}]}`: NISA口座と普通の口座の比較（概算。SPEC §6b）。`tax` は普通の口座だった場合の税額、`after_tax` は手元に残る利益。
+- `news[]` の各件に `explain`（解説。なければ null）と `views[{label, text}]`（考え方の例2つ。なければ null）。
 | 項目 | 内容 |
 |---|---|
 | `server_now` | サーバーの実時刻 |

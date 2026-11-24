@@ -22,8 +22,8 @@ const DISC = [
 const discHtml = () => `<div>${DISC.map((t) => `<p class="disc">${esc(t)}</p>`).join('')}
 <p class="disc">過去の実績は将来の成果を保証するものではありません。</p>
 <p class="disc">このシミュレーターは<b>過去の実データに基づく取引体験</b>です。将来の価格や運用成果の予測・生成は行いません。画面の日付より後の情報を表示しないのは、過去を順番に体験するための制御で、将来を予測しているわけではありません。データの最終日より先には進めません。</p>
-<p class="disc">NISA対象の商品を扱いますが、NISA口座の制度（非課税枠・年間投資枠・枠の復活・税務処理）は再現していません。取引条件（手数料・単位・締切・受渡など）は現在の条件を過去の期間に当てはめた簡略なもので、当時の取引条件を完全に再現したものではありません。</p>
-<p class="disc"><b>再現していない取引要素:</b> 板・流動性・注文待ち順位・スリッページ、指値・日中売買・信用取引・空売り、NISA口座の非課税枠や制度計算、税金（損益はすべて<b>税引前</b>）、分配金の再投資、株式の積立（累積投資）。<b>初版の制限:</b> 受渡前に買った株式・口数の売却と、受渡前の売却代金での購入はできません（実際の口座では可能な場合があります）。実際の取引の約定価格・費用・日程とは異なる場合があります。</p></div>`;
+<p class="disc">NISA対象の商品を扱いますが、NISA口座の制度（年間投資枠・枠の復活・対象商品の区分・税務処理）は再現していません。「NISAと普通の口座の比較」は、利益に約20%の税金がかかるかどうかだけを比べた概算です。取引条件（手数料・単位・締切・受渡など）は現在の条件を過去の期間に当てはめた簡略なもので、当時の取引条件を完全に再現したものではありません。</p>
+<p class="disc"><b>再現していない取引要素:</b> 板・流動性・注文待ち順位・スリッページ、指値・日中売買・信用取引・空売り、NISA口座の投資枠や制度計算、実際の税金の計算（損益は<b>税引前</b>。口座の比較だけ概算の税額を表示）、分配金の再投資、株式の積立（累積投資）。<b>初版の制限:</b> 受渡前に買った株式・口数の売却と、受渡前の売却代金での購入はできません（実際の口座では可能な場合があります）。実際の取引の約定価格・費用・日程とは異なる場合があります。</p></div>`;
 const TERMS = {
   simdate: ['シミュレーション上の日付', '過去の市場データ上の日付です。実際の今日の日付や説明会の時刻とは別です。参加者ごとに、ボタンで進めます。'],
   market: ['成行注文（なりゆきちゅうもん）', '値段を指定せず、市場の価格で売買する注文です。このシミュレーターでは、日付の終わりに注文し、次の営業日の始値（寄付き）で約定します。注文時点では価格が分かりません。'],
@@ -37,7 +37,7 @@ const TERMS = {
   dist: ['配当・分配金', '保有している株式・投資信託から受け取るお金です。このシミュレーターでは税引前の金額で、支払日に入金します。'],
   plan: ['積立', '毎月決まった金額で投資信託を買う仕組みです。このシミュレーターでは投資信託のみ対応です。'],
   reserve: ['確保額', '株式・ETFの成行買いでは、翌日に値上がりしても買えるよう、注文日の終値に余裕（基準とする証券会社の条件で設定）を加えた金額を注文中に確保します。始値がその範囲を超えたら成立せず失効し、確保は戻ります。成立後は実際の代金だけが受渡日まで拘束されます。'],
-  pretax: ['税引前', '税金を引く前の金額です。このシミュレーターでは税金を計算しません。'],
+  pretax: ['税引前', '税金を引く前の金額です。NISA口座では利益に税金がかからないので、この金額がそのまま手元に残ります。普通の口座だった場合の税額は「NISAと普通の口座の比較」で概算を表示します。'],
 };
 // 環境の帯。確認用環境では、未確定のまま動いている項目を常に表示する
 const reviewBanner = (d) => '確認用環境（動作確認用）。本番ではありません' + (d && d.pending && d.pending.length ? '。未確定: ' + d.pending.join('・') : '');
@@ -283,9 +283,14 @@ function allocHtml(al) {
   return `<table class="alloc"><tr><th>分類</th><th class="n">金額</th><th class="n">割合</th></tr>${al.map((x) => `<tr><td>${esc(x.label)}<div class="bar"><span style="width:${Math.max(0, Math.min(100, x.pct_bp / 100))}%"></span></div></td><td class="n">${yen(x.value)}</td><td class="n">${(x.pct_bp / 100).toFixed(1)}%</td></tr>`).join('')}</table>`;
 }
 const EV_GROUP = { deposit: '毎月の入金', plan_order: '積立の注文', settled: '売却代金の受渡（入金）', dividend_declared: '配当・分配金の確定', dividend_paid: '配当・分配金等の入金', order_deferred: '基準価額なしによる繰り延べ', split: '分割・併合', split_fraction: '端数株の処分代金の確定' };
+// 解説と「考え方の例」。立場の異なる2つを並べ、どちらかをすすめない
+function newsMore(n) {
+  if (!n.explain && !n.views) return '';
+  return `<details class="nx"><summary>解説と考え方の例</summary>${n.explain ? `<p class="nx-e">${esc(n.explain)}</p>` : ''}${n.views ? `<div class="nx-v">${n.views.map((x, i) => `<div class="nx-c ${i ? 'b' : 'a'}"><b>${esc(x.label)}</b><span>${esc(x.text)}</span></div>`).join('')}</div><p class="fine">考え方の例です。どちらが正しいということはなく、今後の値動きを示すものでも、特定の商品の売買をすすめるものでもありません。</p>` : ''}</details>`;
+}
 function newsList(list) {
   if (!list.length) return '<p class="sub">まだ表示するできごとはありません。</p>';
-  return `<div class="rows">${list.map((n) => `<div class="row" style="display:block"><div class="fine">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div><div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('')}</div>`;
+  return `<div class="rows">${list.map((n) => `<div class="row" style="display:block"><div class="fine">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div>${newsMore(n)}<div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('')}</div>`;
 }
 
 // ---------- ホーム: スクロールなしの1画面（数字・グラフ・押すボタン） ----------
@@ -320,22 +325,42 @@ function homeChartPts(series, upto) {
   return series.slice(0, upto).map((s, i) => `${x(i).toFixed(1)},${y(s.total).toFixed(1)}`).join(' ');
 }
 const homeChart = (series) => `<svg class="chart home" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="総資産の動き"><line x1="0" y1="119" x2="600" y2="119" stroke="#17223b" stroke-width="1"/><polyline id="homeline" points="${homeChartPts(series, series.length)}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+const plBig = (n) => `<span class="plbig ${n > 0 ? 'pos' : n < 0 ? 'neg' : ''}"><small>${n > 0 ? '▲ 利益' : n < 0 ? '▼ 損失' : '損益'}</small>${n === 0 ? '0' : signYen(n).replace('円', '')}<small>円</small></span>`;
+// NISA口座と普通の口座（課税口座）の比較。計算はサーバー、画面は表示のみ
+function nisaLine(z) {
+  if (!z || z.gain <= 0) return '';
+  return `<button class="nisaline" id="nisaline"><span>NISAなら税金 <b>0円</b>・普通の口座なら <b>約${yen(z.tax)}</b></span><b>くらべる ›</b></button>`;
+}
+function nisaBlock(z) {
+  if (!z) return '';
+  const over = z.over_limit_years.length ? `<p class="fine warn">${z.over_limit_years.map((y) => `${y.year}年の買付は${yen(y.bought)}で、NISAで1年に買える上限（${yen(z.annual_limit)}）を超えています。`).join('')}実際には、上限を超えた分はNISA口座では買えません。</p>` : '';
+  if (z.gain <= 0) return `<div class="nisab"><p>${z.gain < 0 ? 'いまは損失なので、NISA口座でも普通の口座でも税金はかかりません。' : 'いまは利益がないので、どちらの口座でも税金はかかりません。'}利益が出たときは、普通の口座では利益の約20%（${z.rate_text}）が税金になり、NISA口座では0円です。</p><p class="fine">NISA口座の損失は、ほかの口座の利益と差し引きすることができません。</p>${over}</div>`;
+  return `<div class="nisab"><table>
+    <tr><th></th><th class="n">NISA口座</th><th class="n">普通の口座</th></tr>
+    <tr><th>利益（税引前）</th><td class="n">${yen(z.gain)}</td><td class="n">${yen(z.gain)}</td></tr>
+    <tr><th>税金</th><td class="n">0円</td><td class="n">約${yen(z.tax)}</td></tr>
+    <tr class="sum"><th>手元に残る利益</th><td class="n"><b>${yen(z.gain)}</b></td><td class="n"><b>約${yen(z.after_tax)}</b></td></tr></table>
+    <p class="nisad">NISA口座のほうが <b>約${yen(z.tax)}</b> 多く残ります。</p>
+    <p class="fine">普通の口座の税金は、いますべて売って利益を確定したと仮定し、利益（手数料を引いたあと）の${z.rate_text}で計算した概算です。年ごとの計算や損失の繰り越しは省いています。すべてをNISA口座で買えたと仮定しています。</p>${over}</div>`;
+}
 async function viewHome() {
   const m = S.me, a = m.assets, v = $('#view'); const fin = m.account.status !== 'active';
   const attemptJa = m.account.attempt === 1 ? '初回' : `${m.account.attempt}回目`;
   v.innerHTML = `<div class="home">
     <div class="eyebrow">${fin ? '結果' : '総資産'} ${Q('total')} <span class="tag">${attemptJa}</span></div>
     <div class="figure"><span id="fig">${num(a.total)}</span><small>円</small></div>
-    <div class="heroline"><span id="figpl">${plLabel(a.pnl)}</span> <span id="figdelta"></span></div>
+    <div class="heroline"><span id="figpl">${plBig(a.pnl)}</span> <span id="figdelta"></span></div>
+    ${nisaLine(m.nisa)}
     ${homeChart(m.series)}
     <div class="mini"><span>使えるお金 <b>${yen(a.available)}</b></span><a href="#/detail">${a.holdings.length ? `持っているもの ${a.holdings.length}件` : 'くわしく'} ›</a></div>
     ${eventLine()}
     <div class="act">${actionArea(m)}</div>
-    ${fin ? `<div class="resultnote"><p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。損益は税引前です。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>${discHtml()}</div>` : ''}
+    ${fin ? `<div class="resultnote">${nisaBlock(m.nisa)}<p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。損益は税引前です（NISA口座では税金がかからないため、そのまま手元に残る金額です）。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>${discHtml()}</div>` : ''}
   </div>`;
   $('#adv-day')?.addEventListener('click', () => advance('day')); $('#adv-month')?.addEventListener('click', () => advance('month'));
   $('#auto')?.addEventListener('click', () => (S.auto ? stopAuto(true) : startAuto()));
   $('#evline')?.addEventListener('click', showEvents);
+  $('#nisaline')?.addEventListener('click', () => modal(`<h2>NISAと普通の口座の比較</h2>${nisaBlock(S.me.nisa)}`));
 }
 // くわしく: 持っているもの・お金の内訳・資産配分・できごと（ホームから1回押して見る）
 async function viewDetail() {
@@ -346,6 +371,7 @@ async function viewDetail() {
     <tr><th>現金残高</th><td class="n">${yen(a.cash)}</td></tr><tr><th>うち注文のために確保中</th><td class="n">${yen(a.reserved)}</td></tr><tr><th>受渡を待っている買付代金 ${Q('settle')}</th><td class="n">${yen(a.payable_purchase)}</td></tr>
     <tr><th>使えるお金 ${Q('buying')}</th><td class="n">${yen(a.available)}</td></tr><tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}
     <tr><th>入金した合計</th><td class="n">${yen(a.deposits)}</td></tr><tr><th>損益（税引前 ${Q('pretax')}）</th><td class="n">${plLabel(a.pnl)}</td></tr></table>
+    <h3 class="h3">NISAと普通の口座の比較</h3>${nisaBlock(m.nisa)}
     ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(shortName(r.name))} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
     ${m.next_deposit_date ? `<p class="fine">次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}</p>` : ''}</section>
   <section class="blk"><h2>資産配分</h2>${allocHtml(m.allocation)}</section>

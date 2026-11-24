@@ -246,3 +246,22 @@ body.sheet-open{overflow:hidden}
 .calc1 b{font-family:var(--serif);font-size:1.1rem}
 .wiz p{margin:6px 0}.wiz .foot p{margin:2px 0}
 .wiz .fine{margin:4px 0}
+
+/* 0.7: 損益を大きく、NISAと普通の口座の比較、ニュースの解説 */
+.home .heroline{margin-top:2px;min-height:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
+.plbig{font-family:var(--serif);font-size:2.2rem;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.01em;color:var(--ink)}
+.plbig small{font-family:var(--sans);font-size:.82rem;font-weight:700;margin:0 4px 0 0}.plbig small:last-child{font-weight:400;margin:0 0 0 3px}
+.plbig.pos{color:var(--pri)}.plbig.neg{color:var(--loss)}
+.nisaline{appearance:none;display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin-top:6px;padding:7px 10px;border:1px solid var(--pri);border-radius:4px;background:var(--tint);color:var(--ink);font:inherit;font-size:.8rem;text-align:left;cursor:pointer}
+.nisaline span{min-width:0}.nisaline>b{flex:0 0 auto;color:var(--pri);font-size:.76rem;white-space:nowrap}
+.nisab table{width:100%}.nisab tr.sum th,.nisab tr.sum td{border-top:2px solid var(--ink)}
+.nisad{margin:8px 0 4px;padding:8px 10px;background:var(--tint);border-left:4px solid var(--pri)}
+.fine.warn{background:var(--warnbg);padding:6px 8px;border-radius:3px}
+.h3{font-size:.95rem;margin:14px 0 6px}
+details.nx{margin:6px 0}details.nx summary{color:var(--pri);font-weight:700;font-size:.86rem;cursor:pointer;padding:4px 0}
+.nx-e{margin:6px 0;font-size:.9rem}
+.nx-v{display:grid;gap:6px;margin:6px 0}
+.nx-c{border:1px solid var(--rule);border-left:4px solid var(--pri);border-radius:3px;padding:7px 9px;font-size:.86rem;background:#fff}
+.nx-c.b{border-left-color:#8a6d1f}.nx-c b{display:block;font-size:.82rem;margin-bottom:2px}
+@media (max-height:700px){.home svg.chart.home{height:70px}.home .figure{font-size:2.7rem}.plbig{font-size:2.05rem}}
+@media (max-height:700px){.home svg.chart.home{height:54px;margin-top:6px}.home .mini,.home .evline{margin-top:6px}.home .act{margin-top:8px}.home .evline{padding:8px 12px}}

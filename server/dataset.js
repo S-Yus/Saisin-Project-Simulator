@@ -199,7 +199,16 @@ function validateBundle(b, env) {
     if (!/^https?:\/\//.test(n.url)) E(`ニュース ${n.id}: url は http(s) のみ`);
     if (validDate(m.period_start) && (n.published_date < m.period_start || n.published_date > m.period_end)) E(`ニュース ${n.id}: 公表日が対象期間外です`);
     if (n.summary.length > 200) W(`ニュース ${n.id}: 要約が長すぎます（転載にならないよう短く）`);
-    news.push({ id: n.id, published_date: n.published_date, summary: n.summary, source_name: n.source_name, url: n.url });
+    // 解説と「考え方の例」（任意）。値動きの見通しや売買のすすめを書かせない
+    let explain = null, views = null;
+    if (n.explain != null) { if (typeof n.explain !== 'string' || !n.explain.trim() || n.explain.length > 300) E(`ニュース ${n.id}: explain は300字以内の文字列`); else explain = n.explain; }
+    if (n.views != null) {
+      if (!Array.isArray(n.views) || n.views.length !== 2 || n.views.some((x) => !x || typeof x.label !== 'string' || typeof x.text !== 'string' || !x.label.trim() || !x.text.trim() || x.label.length > 30 || x.text.length > 200)) E(`ニュース ${n.id}: views は {label, text} をちょうど2つ（異なる立場を1つずつ。label 30字・text 200字以内）`);
+      else views = n.views.map((x) => ({ label: x.label, text: x.text }));
+    }
+    const said = (explain || '') + (views || []).map((x) => x.label + x.text).join('');
+    for (const w of NEWS_NG) if (said.includes(w)) E(`ニュース ${n.id}: 解説・考え方の例に「${w}」は使えません（値動きの見通しや売買のすすめにあたる表現）`);
+    news.push({ id: n.id, published_date: n.published_date, summary: n.summary, source_name: n.source_name, url: n.url, explain, views });
   }
   if (news.length < 5 || news.length > 8) W(`ニュース件数が ${news.length} 件です（想定は 5〜8 件）`);
   if (strict) for (const s of sources.values()) if (s.license_status !== 'confirmed') W(`出典 ${s.id}: 利用許諾が未確認です（確認済みになるまで固定不可）`);
@@ -211,6 +220,8 @@ function validateBundle(b, env) {
   };
   return { errors, warnings, summary, norm: errors.length ? null : { meta: m, sources: [...sources.values()], instruments: [...insts.values()], prices, calendar, actions, news } };
 }
+
+const NEWS_NG = ['おすすめ', '買い時', '売り時', '上がりそう', '下がりそう', '期待リターン', '値上がりが見込', '儲か', '必ず', '買うべき', '売るべき'];
 
 function hashNorm(n) {
   const h = crypto.createHash('sha256');
@@ -237,7 +248,7 @@ function importDataset(db, bundle, env, now) {
     let seq = 0;
     const ia = db.prepare('INSERT INTO actions(dataset_id,seq,instrument_id,type,ex_date,num,den,per_unit_milli,pay_date,record_date,fraction_price_milli,fraction_pay_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
     for (const a of norm.actions) ia.run(id, seq++, a.instrument_id, a.type, a.ex_date, a.num ?? null, a.den ?? null, a.per_unit_milli ?? null, a.pay_date ?? null, a.record_date ?? null, a.fraction_price_milli ?? null, a.fraction_pay_date ?? null);
-    for (const n of norm.news) db.prepare('INSERT INTO news VALUES(?,?,?,?,?,?)').run(id, n.id, n.published_date, n.summary, n.source_name, n.url);
+    for (const n of norm.news) db.prepare('INSERT INTO news(dataset_id,id,published_date,summary,source_name,url,explain,views_json) VALUES(?,?,?,?,?,?,?,?)').run(id, n.id, n.published_date, n.summary, n.source_name, n.url, n.explain, n.views ? JSON.stringify(n.views) : null);
   });
   return { ok: true, id, warnings, summary };
 }

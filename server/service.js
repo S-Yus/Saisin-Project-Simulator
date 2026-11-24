@@ -152,7 +152,8 @@ function me(db, ctx, nowMs) {
     event: { name: ev.name, status: st, status_ja: STATUS_JA[st], ends_at: ev.ends_at, retention_hours: ev.retention_hours, env: cfg.ENV, data: dataInfo(db, ev), provisional: JSON.parse(ev.provisional_json), ...fundsOf(ev, acc), funds_limits: cfg.FUNDS, period: { start: E.startDate(ds, ev), end: fin }, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION },
     account: { attempt: acc.attempt, status: acc.status, sim_date: acc.sim_date, final_date: fin, version: acc.version },
     assets: { ...v, holdings: v.holdings.map((h) => ({ ...h, name: nm(h.instrument_id), type: ds.instruments.get(h.instrument_id).type, category: ds.instruments.get(h.instrument_id).category, spark: sparkOf(ds, h.instrument_id, acc.sim_date) })) },
-    allocation, series, news: news.slice(0, 20), orders, plans, receivables: recv,
+    nisa: E.nisaCompare(db, acc, v),
+    allocation, series, news: news.slice(0, 20).map((n) => ({ id: n.id, published_date: n.published_date, summary: n.summary, source_name: n.source_name, url: n.url, explain: n.explain || null, views: n.views_json ? JSON.parse(n.views_json) : null })), orders, plans, receivables: recv,
     next_deposit_date: fundsOf(ev, acc).monthly_deposit > 0 && acc.sim_date < fin ? nextMonthStart(ds, acc.sim_date) : null,
     disclaimers: cfg.DISCLAIMERS,
   };

@@ -67,6 +67,15 @@ function valuation(db, acc, ds) {
   const total = acc.cash + hv + recSale + recDiv + recFrac - payable;
   return { cash: acc.cash, reserved, payable_purchase: payable, available: acc.cash - reserved - payable, holdings_value: hv, receivable_sale: recSale, receivable_dividend: recDiv + recFrac, total, deposits: acc.deposits, pnl: total - acc.deposits, holdings };
 }
+// 課税口座（NISAではない普通の口座）だった場合の税額の概算。利益に 所得税15.315% + 住民税5%（各々円未満切り捨て）。損失・0 は税額0
+function taxOnGain(gain) { return gain > 0 ? Math.floor((gain * 15315) / 100000) + Math.floor((gain * 5) / 100) : 0; }
+const NISA_ANNUAL_LIMIT = 3600000; // つみたて投資枠120万円 + 成長投資枠240万円
+// NISA口座と課税口座の比較（概算）。「いますべて売って損益を確定した」と仮定し、通算した損益（手数料控除後）に課税する
+function nisaCompare(db, acc, v) {
+  const tax = taxOnGain(v.pnl);
+  const years = db.prepare("SELECT substr(date,1,4) AS y, SUM(ABS(amount)) AS s FROM ledger WHERE account_id=? AND type='buy' GROUP BY y ORDER BY y").all(acc.id);
+  return { gain: v.pnl, tax, after_tax: v.pnl - tax, rate_text: '20.315%', annual_limit: NISA_ANNUAL_LIMIT, over_limit_years: years.filter((r) => r.s > NISA_ANNUAL_LIMIT).map((r) => ({ year: r.y, bought: r.s })) };
+}
 function snapshot(db, acc, ds) {
   const v = valuation(db, acc, ds);
   db.prepare('INSERT OR REPLACE INTO snapshots(account_id,date,total,deposits) VALUES(?,?,?,?)').run(acc.id, acc.sim_date, v.total, v.deposits);
@@ -398,4 +407,4 @@ function updatePlan(db, acc, ds, planId, inp) {
   return { ok: true };
 }
 
-module.exports = { FAR, finalDate, startDate, dateAt, calcFee, reservePrice, lastPrice, lineValue, getAcc, availableCash, sellableQty, valuation, snapshot, createAccount, evaluateOrder, placeOrder, cancelOrder, advance, createPlan, updatePlan, statusJa, ymOf, dayOf, nextYm, MAX_QTY, MAX_AMOUNT };
+module.exports = { taxOnGain, nisaCompare, NISA_ANNUAL_LIMIT, FAR, finalDate, startDate, dateAt, calcFee, reservePrice, lastPrice, lineValue, getAcc, availableCash, sellableQty, valuation, snapshot, createAccount, evaluateOrder, placeOrder, cancelOrder, advance, createPlan, updatePlan, statusJa, ymOf, dayOf, nextYm, MAX_QTY, MAX_AMOUNT };

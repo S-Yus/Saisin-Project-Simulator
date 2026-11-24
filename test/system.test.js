@@ -388,3 +388,28 @@ test('参加者ごとの資金条件: 範囲・単位をサーバーが検証し
   // 口座に保存されるのは2つの金額だけ（質問の回答を保存する列はない）
   assert.deepEqual(env.db.prepare('PRAGMA table_info(participants)').all().map((r) => r.name), ['id', 'event_id', 'token_hash', 'created_at']);
 });
+
+test('NISAと普通の口座の比較: 税額は利益の所得税15.315%＋住民税5%（各円未満切り捨て）、損失は0。年間投資枠を超える買付を示す', () => {
+  assert.equal(E.taxOnGain(0), 0); assert.equal(E.taxOnGain(-50000), 0);
+  assert.equal(E.taxOnGain(100000), 15315 + 5000); assert.equal(E.taxOnGain(1), 0); assert.equal(E.taxOnGain(19), 2); assert.equal(E.taxOnGain(123457), 18907 + 6172);
+  const env = setup(bundle36(), {}); const a = api(env);
+  const tok = S.join(env.db, env.ev.join_code, env.now, { code: env.ev.join_code, initial_cash: 5000000, monthly_deposit: 0 }).token;
+  let z = a.me(tok).nisa; assert.deepEqual([z.gain, z.tax, z.after_tax, z.over_limit_years.length], [0, 0, 0, 0]);
+  a.order(tok, { instrument_id: 'F1', side: 'buy', amount: 4000000 });
+  for (let i = 0; i < 14; i++) a.advance(tok, 'month');
+  const me = a.me(tok); z = me.nisa;
+  assert.equal(z.gain, me.assets.pnl); assert.equal(z.tax, E.taxOnGain(me.assets.pnl)); assert.equal(z.after_tax, z.gain - z.tax); assert.ok(z.tax >= 0 && z.after_tax <= z.gain);
+  assert.equal(z.annual_limit, 3600000); assert.equal(z.over_limit_years.length, 1); assert.ok(z.over_limit_years[0].bought > 3600000);
+});
+
+test('ニュースの解説と考え方の例: 任意。立場はちょうど2つ。値動きの見通し・売買のすすめにあたる表現は取込で拒否。公表日より前には出ない', () => {
+  const mk = (over) => { const b = bundle36(); Object.assign(b.news[0], over); return b; };
+  const ok = { explain: '制度のしくみの説明です。', views: [{ label: '続ける', text: '方針を変えないという考え方です。' }, { label: '見直す', text: '割合を確かめるという考え方です。' }] };
+  assert.equal(validateBundle(mk(ok), 'dev').errors.length, 0);
+  for (const bad of [{ views: [ok.views[0]] }, { views: [...ok.views, ok.views[0]] }, { views: [{ label: '', text: 'x' }, ok.views[1]] }, { explain: 'いまが買い時です。' }, { views: [{ label: '買う', text: 'これから上がりそうです。' }, ok.views[1]] }, { explain: 'x'.repeat(301) }])
+    assert.ok(validateBundle(mk(bad), 'dev').errors.length > 0, JSON.stringify(bad).slice(0, 60));
+  const env = setup(mk(ok), {}); const a = api(env); const tok = a.join();
+  assert.equal(a.me(tok).news.length, 0);
+  for (let i = 0; i < 40 && !a.me(tok).news.length; i++) a.advance(tok, 'month');
+  const n = a.me(tok).news.at(-1); assert.equal(n.explain, ok.explain); assert.deepEqual(n.views, ok.views);
+});

@@ -215,3 +215,10 @@ test('開発・検算環境は外部から到達できる待受では起動し�
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, APP_ENV: 'dev', HOST: '0.0.0.0', PORT: '18999', DB_PATH: ':memory:', OPERATOR_TOKEN: 'a'.repeat(32), VERIFIER_TOKEN: 'b'.repeat(32) }, encoding: 'utf8', timeout: 15000 });
   assert.equal(r.status, 1); assert.match(r.stderr, /ループバック/);
 });
+
+test('実データのニュース: 5件すべてに解説と、立場の異なる2つの考え方の例がある（取込検証を通る）', { skip: !fs.existsSync(path.join(__dirname, '..', 'market-data', 'raw')) }, () => {
+  const { build } = require('../scripts/build-dataset');
+  const news = build().bundle.news;
+  assert.equal(news.length, 5);
+  for (const n of news) { assert.ok(n.explain && n.explain.length <= 300, n.id); assert.equal(n.views.length, 2, n.id); assert.notEqual(n.views[0].label, n.views[1].label); }
+});

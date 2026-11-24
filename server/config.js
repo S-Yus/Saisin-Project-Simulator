@@ -24,8 +24,8 @@ module.exports = {
   // 許諾未確認・条件仮設定・確認未記録のままでも固定・公開できる（画面に「確認用環境」と未確定事項を常時表示）。
   // 本番（prod）だけが、許諾確認済み・条件確定・仮設定なし・動作確認の記録を公開の条件にする。
   REVIEW: ENV === 'staging',
-  APP_VERSION: '0.6.0',
-  CALC_SPEC_VERSION: '1.3',          // docs/SPEC.md の版。計算仕様を変えたら必ず上げる
+  APP_VERSION: '0.7.0',
+  CALC_SPEC_VERSION: '1.4',          // docs/SPEC.md の版。計算仕様を変えたら必ず上げる
   CODE_HASH: codeHash(),
   PORT: Number(process.env.PORT || 8080),
   HOST: process.env.HOST || '127.0.0.1', // 既定はローカルのみ待受。公開はリバースプロキシ経由
