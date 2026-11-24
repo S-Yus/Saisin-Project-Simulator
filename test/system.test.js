@@ -413,3 +413,15 @@ test('ニュースの解説と考え方の例: 任意。立場はちょうど2�
   for (let i = 0; i < 40 && !a.me(tok).news.length; i++) a.advance(tok, 'month');
   const n = a.me(tok).news.at(-1); assert.equal(n.explain, ok.explain); assert.deepEqual(n.views, ok.views);
 });
+
+test('参加用QRコードの公開URL: http(s) のオリジンだけを受け付け、管理APIが返す（経路・クエリ・認証情報つきは無効）', async () => {
+  const P = cfg.parsePublicUrl;
+  assert.equal(P('https://staging.example.jp/'), 'https://staging.example.jp'); assert.equal(P('http://localhost:8080'), 'http://localhost:8080');
+  for (const bad of ['', undefined, 'staging.example.jp', 'https://a.jp/path', 'https://a.jp/?code=x', 'https://user:pw@a.jp', 'javascript:alert(1)', 'https://a.jp#x']) assert.equal(P(bad), '', String(bad));
+  const db = openDb(':memory:'); const op = 'o'.repeat(40), ve = 'v'.repeat(40);
+  const srv = createApp(db, { operatorToken: op, verifierToken: ve, publicUrl: 'https://staging.example.jp', quiet: true }).server; await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${srv.address().port}/admin-api/events`, { headers: { Authorization: 'Bearer ' + op } });
+    assert.equal(r.status, 200); assert.equal((await r.json()).public_url, 'https://staging.example.jp');
+  } finally { await new Promise((r) => srv.close(r)); }
+});

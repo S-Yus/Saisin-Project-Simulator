@@ -62,6 +62,7 @@ function showEnded(msg) {
   $('#view').innerHTML = `<h1>この説明会の利用は終了しました</h1><div class="msg warn">${esc(msg)}</div><p>新しい操作・参加はできません。画面や端末に残った表示は、サーバー側からは消去できません。</p>${discHtml()}`;
 }
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; $('#toasts').append(d); setTimeout(() => d.remove(), 5000); }
+$('#dlg').addEventListener('close', () => $('#dlg').classList.remove('nc'));
 function modal(html) { $('#dlgbody').innerHTML = html; const d = $('#dlg'); if (!d.open) d.showModal(); }
 document.addEventListener('click', (e) => {
   const q = e.target.closest('[data-term]'); if (q) { e.preventDefault(); const t = TERMS[q.dataset.term]; modal(`<h3 style="margin-top:0">${esc(t[0])}</h3><p>${esc(t[1])}</p>`); }
@@ -74,7 +75,7 @@ async function refresh() { S.me = await api('GET', '/api/me'); S.offset = Date.p
 function renderHeader() {
   const m = S.me; $('#top').hidden = false; $('#tabs').hidden = false;
   if (!S.playing) setClock(m.account.sim_date);
-  $('#period').textContent = (m.event.data.kind === 'dev_test' ? '架空データ ' : '過去の実データ ') + ymShort(m.event.period.start) + '–' + ymShort(m.event.period.end);
+  $('#period').textContent = m.event.data.kind === 'dev_test' ? '架空データ' : '';
   showEnvBanner(m.event.env, m.event.data);
   const sb = $('#statusbar');
   if (m.event.status === 'paused') { sb.hidden = false; sb.textContent = '管理者により一時停止中です。再開まで操作できません。'; }
@@ -288,6 +289,14 @@ function newsMore(n) {
   if (!n.explain && !n.views) return '';
   return `<details class="nx"><summary>解説と考え方の例</summary>${n.explain ? `<p class="nx-e">${esc(n.explain)}</p>` : ''}${n.views ? `<div class="nx-v">${n.views.map((x, i) => `<div class="nx-c ${i ? 'b' : 'a'}"><b>${esc(x.label)}</b><span>${esc(x.text)}</span></div>`).join('')}</div><p class="fine">考え方の例です。どちらが正しいということはなく、今後の値動きを示すものでも、特定の商品の売買をすすめるものでもありません。</p>` : ''}</details>`;
 }
+// 新しいできごとは、進めた直後にカードで見せる（閉じる／売買する）
+function newsCard(list) {
+  if (!list.length) return;
+  const one = (n) => `<div class="nc-item"><div class="fine">${jdate(n.published_date)} 公表</div><p class="nc-s">${esc(n.summary)}</p>${n.explain ? `<p class="nx-e">${esc(n.explain)}</p>` : ''}${n.views ? `<div class="nc-h">考え方の例</div><div class="nx-v">${n.views.map((x, i) => `<div class="nx-c ${i ? 'b' : 'a'}"><b>${esc(x.label)}</b><span>${esc(x.text)}</span></div>`).join('')}</div>` : ''}<div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a></div></div>`;
+  const d = $('#dlg'); d.classList.add('nc');
+  modal(`<div class="eyebrow">新しいできごと</div>${list.map(one).join('')}<p class="fine">${list.some((n) => n.views) ? '考え方の例は、どちらが正しいということはなく、' : ''}今後の値動きを示すものでも、特定の商品の売買をすすめるものでもありません。</p><div class="btns"><button class="btn" id="nc-close">閉じる</button><button class="btn pri" id="nc-trade">売買する</button></div>`);
+  $('#nc-close').onclick = () => d.close(); $('#nc-trade').onclick = () => { d.close(); location.hash = '#/market'; };
+}
 function newsList(list) {
   if (!list.length) return '<p class="sub">まだ表示するできごとはありません。</p>';
   return `<div class="rows">${list.map((n) => `<div class="row" style="display:block"><div class="fine">${jdate(n.published_date)} 公表</div><div>${esc(n.summary)}</div>${newsMore(n)}<div class="fine">出典: <a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.source_name)}</a>　※値動きとの因果関係を示すものではありません</div></div>`).join('')}</div>`;
@@ -305,7 +314,7 @@ function actionArea(m) {
   return `<p class="hint">${S.auto ? '自動で進めています' : m.orders.length ? '時間を進めると、注文が成立します' : '時間を進める'}</p>${timeButtons()}`;
 }
 // 直近に進めた間の出来事は1行だけ見せ、押すと全部を一覧で出す
-const EV_KEY = new Set(['order_filled', 'order_lapsed', 'plan_skipped', 'news']);
+const EV_KEY = new Set(['order_filled', 'order_lapsed', 'plan_skipped']);
 function eventLine() {
   const key = S.last.filter((e) => EV_KEY.has(e.type)); const n = S.last.filter((e) => e.type !== 'end').length;
   if (!n) return '';
@@ -350,12 +359,11 @@ async function viewHome() {
     <div class="eyebrow">${fin ? '結果' : '総資産'} ${Q('total')} <span class="tag">${attemptJa}</span></div>
     <div class="figure"><span id="fig">${num(a.total)}</span><small>円</small></div>
     <div class="heroline"><span id="figpl">${plBig(a.pnl)}</span> <span id="figdelta"></span></div>
-    ${nisaLine(m.nisa)}
     ${homeChart(m.series)}
     <div class="mini"><span>使えるお金 <b>${yen(a.available)}</b></span><a href="#/detail">${a.holdings.length ? `持っているもの ${a.holdings.length}件` : 'くわしく'} ›</a></div>
     ${eventLine()}
     <div class="act">${actionArea(m)}</div>
-    ${fin ? `<div class="resultnote">${nisaBlock(m.nisa)}<p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。損益は税引前です（NISA口座では税金がかからないため、そのまま手元に残る金額です）。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>${discHtml()}</div>` : ''}
+    ${fin ? `<div class="resultnote"><h2 class="h3">NISAと普通の口座の比較</h2>${nisaBlock(m.nisa)}<p class="fine">期間 ${jdate(m.event.period.start)} 〜 ${jdate(m.account.sim_date)}。過去の実データによる結果であり、将来の成果を保証するものではありません。順位付けや投資判断の評価はしません。損益は税引前です（NISA口座では税金がかからないため、そのまま手元に残る金額です）。${m.account.attempt > 1 ? '再試行では過去の値動きを知ったうえで操作できるため、初回とは区別して表示しています。' : ''}</p>${discHtml()}</div>` : ''}
   </div>`;
   $('#adv-day')?.addEventListener('click', () => advance('day')); $('#adv-month')?.addEventListener('click', () => advance('month'));
   $('#auto')?.addEventListener('click', () => (S.auto ? stopAuto(true) : startAuto()));
@@ -371,7 +379,6 @@ async function viewDetail() {
     <tr><th>現金残高</th><td class="n">${yen(a.cash)}</td></tr><tr><th>うち注文のために確保中</th><td class="n">${yen(a.reserved)}</td></tr><tr><th>受渡を待っている買付代金 ${Q('settle')}</th><td class="n">${yen(a.payable_purchase)}</td></tr>
     <tr><th>使えるお金 ${Q('buying')}</th><td class="n">${yen(a.available)}</td></tr><tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}
     <tr><th>入金した合計</th><td class="n">${yen(a.deposits)}</td></tr><tr><th>損益（税引前 ${Q('pretax')}）</th><td class="n">${plLabel(a.pnl)}</td></tr></table>
-    <h3 class="h3">NISAと普通の口座の比較</h3>${nisaBlock(m.nisa)}
     ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(shortName(r.name))} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
     ${m.next_deposit_date ? `<p class="fine">次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}</p>` : ''}</section>
   <section class="blk"><h2>資産配分</h2>${allocHtml(m.allocation)}</section>
@@ -419,6 +426,7 @@ async function advance(mode) {
     S.playing = onHome() && !reduceMotion(); // 演出が終わるまで、ヘッダーの日付を先に進めない
     await refresh(); if (onHome()) { await viewHome(); await playTime(from); } else S.playing = false;
     if (r.events.some((e) => e.type === 'order_filled')) buzz(30);
+    if (onHome()) newsCard(S.me.news.filter((n) => n.published_date > from).reverse());
     return r;
   } catch (e) {
     S.playing = false;

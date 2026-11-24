@@ -1,4 +1,5 @@
 'use strict';
+const PUB = { url: '' }; // 参加者が開く公開URL（サーバーの設定 PUBLIC_URL）
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 管理トークンはメモリ上の変数にのみ保持する（localStorage/sessionStorage/URL/Cookie には保存しない。再読み込みで再入力）
@@ -23,6 +24,7 @@ function loginView(msg) {
 }
 async function main() {
   const [ev, ds, pg] = await Promise.all([api('GET', '/events'), api('GET', '/datasets'), api('GET', '/purge')]);
+  PUB.url = ev.public_url || '';
   const op = who.role === 'operator';
   $('#app').innerHTML = `<h1>管理画面 <span class="tag">${op ? '運用担当' : '確認担当'}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ 計算仕様版 ${esc(who.calc_spec_version)} ／ コード ${esc(who.code_hash.slice(0, 12))} ／ Node ${esc(who.node)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="logout">ログアウト</button></div>
   ${pg.failing.length ? `<div class="msg err"><b>削除ジョブが失敗しています</b>（開催 ${pg.failing.map(esc).join(', ')}）。自動で再試行しますが、続く場合は対応してください。</div>` : ''}
@@ -36,7 +38,8 @@ async function main() {
 }
 function eventCard(e, op) {
   const c = e.configuration; const v = e.verification;
-  const joinUrl = `${location.origin}/?code=${e.join_code}`;
+  const joinUrl = `${PUB.url || location.origin}/?code=${e.join_code}`;
+  const localOnly = !PUB.url && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   return `<div class="card" data-ev="${esc(e.id)}"><h3 style="margin-top:0">${esc(e.name)} <span class="tag ${e.status === 'open' ? 'fill' : 'prov'}">${esc(e.status_ja)}</span></h3>
   <div class="sub">開催 ${fdt(e.starts_at)} 〜 ${fdt(e.ends_at)} ／ 参加 ${e.participants}/${e.max_participants}人 ／ 操作状態 ${esc(e.admin_state)}</div>
   <div class="sub">削除予定: <b>${e.purged_at ? '削除済み ' + fdt(e.purged_at) : fdt(e.purge_at)}</b>（終了後 ${e.retention_hours} 時間）</div>
@@ -48,7 +51,7 @@ function eventCard(e, op) {
   ${who.role === 'verifier' && c.fingerprint && !e.purged_at ? `<div class="row"><input data-f="vby" placeholder="確認者名"><input data-f="vref" placeholder="確認記録の識別番号"><input data-f="vnote" placeholder="備考（任意）"></div><div class="btns"><button class="btn pri" data-act="verify" data-fp="${esc(c.fingerprint)}">この構成の確認完了を記録</button></div>` : ''}
   ${op && !e.purged_at ? `<div class="btns"><button class="btn pri" data-act="enable">公開（有効化）</button><button class="btn" data-act="pause">全体を一時停止</button><button class="btn" data-act="resume">再開</button><button class="btn danger" data-act="emergency_stop">緊急停止</button></div>
   <details><summary>保持時間・削除</summary><div class="row"><input data-f="hours" type="number" min="0" value="${e.retention_hours}"><button class="btn" data-act="rprev">影響を確認</button></div><div data-f="rmsg"></div><div class="row"><input data-f="pname" placeholder="即時削除: 開催名を入力"><button class="btn danger" data-act="purge">参加者データを今すぐ削除</button></div></details>` : ''}
-  <details><summary>参加用QRコード</summary><div class="sub">${esc(joinUrl)}</div><div data-qr="${esc(joinUrl)}"></div></details></div>`;
+  <details open><summary>参加用QRコード</summary>${localOnly ? '<div class="msg warn">公開URL（環境変数 PUBLIC_URL）が未設定です。このQRコードはこのPCからしか開けません。</div>' : ''}<div class="sub">${esc(joinUrl)}</div><div data-qr="${esc(joinUrl)}"></div>${e.purged_at ? '' : `<div class="btns"><button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}">会場用に大きく表示</button></div>`}</details></div>`;
 }
 function createForm(dsl) {
   const locked = dsl.filter((d) => d.status === 'locked');
@@ -96,6 +99,15 @@ function wire() {
   });
   document.querySelectorAll('[data-lock]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('データを固定します。以後、内容は変更できません。よろしいですか？')) return; const r = await api('POST', `/datasets/${b.dataset.lock}/lock`, {}); if (r.ok) { toast('固定しました'); main(); } else toast(r.errors.join(' / '), true); }));
   document.querySelectorAll('[data-lic]').forEach((b) => b.addEventListener('click', async () => { const [d, s, st] = b.dataset.lic.split('|'); const note = st === 'confirmed' ? prompt('許諾の確認内容（契約書・規約の名称、確認日など）') : ''; if (st === 'confirmed' && !note) return; try { await api('POST', `/datasets/${d}/license`, { source_id: s, status: st, note }); main(); } catch (e) { toast(e.message, true); } }));
+  document.querySelectorAll('[data-qrbig]').forEach((b) => b.addEventListener('click', () => {
+    const url = b.dataset.qrbig; let svg = '';
+    try { const q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 8, margin: 4, scalable: true }); } catch { svg = '<p>QRを生成できませんでした。</p>'; }
+    const o = document.createElement('div'); o.id = 'qrbig';
+    o.innerHTML = `<div class="qb-in"><div class="qb-t">${esc(b.dataset.qrname)}</div><div class="qb-h">スマートフォンのカメラで読み取ってください</div><div class="qb-q">${svg}</div><div class="qb-u">${esc(url)}</div><div class="btns noprint"><button class="btn" id="qb-print">印刷</button><button class="btn pri" id="qb-x">閉じる</button></div></div>`;
+    document.body.appendChild(o); document.body.classList.add('qrmode');
+    const close = () => { o.remove(); document.body.classList.remove('qrmode'); };
+    o.querySelector('#qb-x').onclick = close; o.querySelector('#qb-print').onclick = () => window.print();
+  }));
   document.querySelectorAll('[data-qr]').forEach((el) => { try { const q = qrcode(0, 'M'); q.addData(el.dataset.qr); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 4, scalable: true }); el.firstChild.style.maxWidth = '220px'; el.firstChild.style.background = '#fff'; } catch { el.textContent = 'QRを生成できませんでした。URLを使ってください。'; } });
   document.querySelectorAll('[data-ev]').forEach((card) => {
     const id = card.dataset.ev; const f = (n) => card.querySelector(`[data-f="${n}"]`);

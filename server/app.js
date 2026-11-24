@@ -81,7 +81,7 @@ function createApp(db, opts = {}) {
     const needOp = () => { if (role !== 'operator') throw new HttpError(403, 'この操作の権限がありません（運用担当のみ）'); };
     let mm;
     if (m === 'GET' && p === '/whoami') return { role, env: cfg.ENV, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION, code_hash: cfg.CODE_HASH, node: process.version, server_now: S.iso(t) };
-    if (m === 'GET' && p === '/events') return { events: A.listEvents(db, t) };
+    if (m === 'GET' && p === '/events') return { events: A.listEvents(db, t), public_url: opts.publicUrl ?? cfg.PUBLIC_URL };
     if (m === 'GET' && p === '/datasets') return { datasets: A.listDatasets(db) };
     if (m === 'GET' && p === '/purge') return A.purgeStatus(db);
     if (m === 'POST' && (mm = p.match(/^\/events\/([\w]+)\/verify$/))) { if (role !== 'verifier') throw new HttpError(403, '動作確認の記録は確認担当のみ可能です（運用担当とは別トークン）'); return A.recordVerification(db, mm[1], body, t, role); }

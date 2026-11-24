@@ -17,14 +17,19 @@ function codeHash() {
   return h.digest('hex');
 }
 
+// 参加者が開く公開URL（QRコードに入れる）。http(s) のオリジンだけを受け付け、経路・クエリ・認証情報は入れさせない
+function parsePublicUrl(v) { const s = String(v || '').trim().replace(/\/+$/, ''); return /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(s) ? s : ''; }
+
 module.exports = {
+  parsePublicUrl,
+  PUBLIC_URL: parsePublicUrl(process.env.PUBLIC_URL),
   ENV,
   STRICT: ENV !== 'dev', // 本番・確認用環境: 本番形式データのみ、検証済みの Node・32文字以上のトークンが必須
   // 確認用環境（staging）は、さいしんが動作確認を行う場所。確認の前に動いている必要があるため、
   // 許諾未確認・条件仮設定・確認未記録のままでも固定・公開できる（画面に「確認用環境」と未確定事項を常時表示）。
   // 本番（prod）だけが、許諾確認済み・条件確定・仮設定なし・動作確認の記録を公開の条件にする。
   REVIEW: ENV === 'staging',
-  APP_VERSION: '0.7.0',
+  APP_VERSION: '0.7.1',
   CALC_SPEC_VERSION: '1.4',          // docs/SPEC.md の版。計算仕様を変えたら必ず上げる
   CODE_HASH: codeHash(),
   PORT: Number(process.env.PORT || 8080),
