@@ -1,12 +1,12 @@
-/* 資産形成シミュレーター: 通帳のような、明るく落ち着いた画面。
-   紙の白・藍のインク・深い緑の一色で構成し、数字は明朝体で大きく見せる。箱を並べず、罫線と余白で区切る。 */
+/* 資産形成シミュレーター: 金融機関のアプリとして当たり前の、白地・ゴシック体・緑一色の画面。
+   飾り（明朝の大見出し、字間を空けた小見出し、左だけ色を付けた枠、丸い印、動く演出）は使わない。末尾の「0.8」の節が最終的な見た目を決める。 */
 :root{
   color-scheme:light;
-  --paper:#f7f5ef;--surface:#fff;--ink:#17223b;--sub:#5b6478;--rule:#e3dfd3;--rule-strong:#17223b;
-  --pri:#0f5e52;--pri-ink:#fff;--tint:#e6f0ec;--tint-strong:#cfe3dc;
-  --gain:#0f5e52;--loss:#b4472b;--warn:#7a4a00;--warnbg:#fbf1dc;--err:#a3321c;--errbg:#fbe9e4;--dev:#8a1c2b;
+  --paper:#fff;--band:#f3f5f6;--surface:#fff;--ink:#1b1f24;--sub:#616b76;--rule:#e1e5e9;--rule-strong:#c9d0d7;
+  --pri:#00754a;--pri-ink:#fff;--tint:#eaf5f0;--tint-strong:#cfe8dc;
+  --gain:#00754a;--loss:#d0342c;--warn:#7a4a00;--warnbg:#fbf1dc;--err:#a3321c;--errbg:#fbe9e4;--dev:#8a1c2b;
   --sans:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Noto Sans JP","Meiryo",system-ui,sans-serif;
-  --serif:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP","HGS明朝E",serif;
+  --serif:var(--sans); /* 明朝体は使わない（名前だけ残してある） */
 }
 *{box-sizing:border-box}
 html{font-size:16px;-webkit-text-size-adjust:100%}
@@ -274,3 +274,63 @@ dialog.nc{max-height:calc(100dvh - 32px);overflow:auto}
 .nc-h{font-size:.78rem;font-weight:700;color:var(--sub);margin-top:8px}
 dialog.nc .btns{margin-top:12px;display:flex;gap:8px}dialog.nc .btns .btn{flex:1}
 dialog.nc .btns{position:sticky;bottom:-20px;background:var(--surface);padding:10px 0 20px;margin-bottom:-20px;border-top:1px solid var(--rule)}
+
+/* ---- 0.8: 飾りを外し、金融機関のアプリとして普通の見た目にする ---- */
+body{line-height:1.65}
+header#top{background:var(--pri);color:#fff;border-bottom:0}
+.hdr{align-items:center;padding:8px 20px 6px}
+.hdr .lbl{color:rgba(255,255,255,.85);letter-spacing:0;font-size:.72rem}
+.simdate{font-size:1.2rem;font-weight:700;color:#fff}
+header#top .q{border-color:rgba(255,255,255,.8);color:#fff}
+header#top .linkbtn{color:#fff;font-size:.78rem}
+.period{color:#fff;letter-spacing:0}
+.timeline{padding-bottom:10px}
+.timeline .track{height:3px;background:rgba(255,255,255,.3);border-radius:2px}
+.timeline .track span{background:#fff;border-radius:2px}.timeline .track span::after{display:none}
+.tmonth{color:rgba(255,255,255,.9)}
+body.ticking .simdate{color:#fff}body.ticking header#top{box-shadow:none}
+h1{font-size:1.3rem;font-weight:700;line-height:1.5}
+h2{font-size:.95rem;letter-spacing:0;color:var(--ink)}
+.eyebrow{letter-spacing:0;color:var(--sub);font-size:.84rem;font-weight:600}
+.figure,.plbig,.bignum{font-weight:700;letter-spacing:0}
+.figure small,.plbig small:last-child{font-weight:600}
+.pair dt,.pair .k,.row .cat,.steps,.wiz .num,nav#tabs a{letter-spacing:0}
+.row .cat{color:var(--sub);font-weight:600}
+.wiz .num{color:var(--sub);font-size:.84rem;font-weight:600}
+.btn{border:1px solid var(--rule-strong);color:var(--ink);border-radius:8px;min-height:50px}
+.btn.pri{border-color:var(--pri);color:#fff}
+.btn.danger{border-color:var(--err);color:var(--err)}
+.tb{border:1px solid var(--rule-strong);color:var(--ink);border-radius:8px}
+.tb.main{border-color:var(--pri);color:#fff}.tb.stop{border-color:var(--loss);color:var(--loss)}
+.btn,.chip,.seg button,.tb{transition:none}
+.btn:active:not(:disabled),.tb:active:not(:disabled),.chip:active,.seg button:active{transform:none;filter:brightness(.94)}
+.btn:focus-visible,.chip:focus-visible,input:focus-visible,.seg button:focus-visible,a:focus-visible,summary:focus-visible,.tb:focus-visible{outline:2px solid #1a56c4;outline-offset:2px}
+.q{border-color:var(--rule-strong)}
+.tag{border:0;border-radius:3px;background:var(--band);color:var(--sub);font-weight:600}
+.tag.acc{background:var(--tint);color:var(--pri)}
+.msg,.card{border-radius:8px}
+.disc{border-left:0;padding:0;font-size:.84rem}
+input{border:1px solid var(--rule-strong);border-radius:8px}
+.chip{border:1px solid var(--rule-strong);border-radius:8px}
+.seg{border:1px solid var(--rule-strong);border-radius:8px}
+.seg button{color:var(--ink)}.seg button+button{border-left:1px solid var(--rule-strong)}
+.seg button.on{background:var(--pri);color:#fff}
+.next{border-left:1px solid var(--rule);border-radius:8px}
+.evline{border:0;border-radius:8px;background:var(--band);padding:10px 12px}
+.evline.stop{background:var(--warnbg)}
+.nisad{border-left:0;border-radius:8px}
+.nx-c,.nx-c.b{border:0;border-radius:8px;background:var(--band)}
+.delta{background:none;padding:0;margin-left:0;animation:none;color:var(--sub);font-weight:600}.delta.neg{background:none;color:var(--loss)}
+.seal{border:0;border-radius:6px;background:var(--tint);font-weight:700;font-size:.9rem}
+.stamp{width:auto;height:auto;padding:5px 12px;border:1.5px solid var(--pri);border-radius:4px;color:var(--pri);font-size:.9rem;letter-spacing:0;transform:none;animation:none}
+#coach .ring{border:2px solid #e08a00;border-radius:8px;box-shadow:none;animation:none}
+#coach .tip{border-radius:8px}
+nav#tabs{background:#fff;border-top:1px solid var(--rule)}
+nav#tabs a{border-top:0;margin-top:0}nav#tabs a.on{color:var(--pri)}
+dialog{border:0;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.toast{border-radius:8px}
+.sheet{background:#fff}.sheet-h{border-bottom:1px solid var(--rule)}.sheet-h b{font-weight:700}
+.nisab tr.sum th,.nisab tr.sum td{border-top:1px solid var(--ink)}
+.alloc .bar{border-radius:3px;overflow:hidden}
+@media (max-height:700px){svg.chart{height:84px}}

@@ -251,7 +251,7 @@ function chart(series, opts = {}) {
   const W0 = 600, H = 150, P = 6; const ys = series.map((s) => s[1]); let lo = Math.min(...ys), hi = Math.max(...ys); if (lo === hi) { lo -= 1; hi += 1; }
   const x = (i) => P + (i / Math.max(1, series.length - 1)) * (W0 - 2 * P), y = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
   const pts = series.map((s, i) => `${x(i).toFixed(1)},${y(s[1]).toFixed(1)}`).join(' ');
-  return `<svg class="chart" viewBox="0 0 ${W0} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(opts.label || '推移')}"><line x1="0" y1="${H - 1}" x2="${W0}" y2="${H - 1}" stroke="#17223b" stroke-width="1"/><polyline points="${pts}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+  return `<svg class="chart" viewBox="0 0 ${W0} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(opts.label || '推移')}"><line x1="0" y1="${H - 1}" x2="${W0}" y2="${H - 1}" stroke="#c9d0d7" stroke-width="1"/><polyline points="${pts}" fill="none" stroke="#00754a" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
   <div class="chart-ends"><span>${esc(jdate(series[0][0]))}</span><span>最小 ${esc(num(Math.round(lo)))} ／ 最大 ${esc(num(Math.round(hi)))}</span><span>${esc(jdate(series[series.length - 1][0]))}</span></div>`;
 }
 // 愛称があればそれを大きく、正式名称は小さく添える（正式名称は必ず表示する）
@@ -261,10 +261,10 @@ const nameHtml = (n) => { const s = shortName(n); return `<div class="nm">${esc(
 const sealChar = (c) => (/金/.test(c) && !/資金/.test(c) ? '金' : /REIT|リート|不動産/i.test(c) ? '不' : /バランス/.test(c) ? '均' : /債/.test(c) ? '債' : /インデックス/.test(c) ? '指' : /海外|世界|外国/.test(c) ? '世' : /国内|日本/.test(c) ? '日' : /ETF/i.test(c) ? 'E' : (c || '・').slice(0, 1));
 const seal = (c) => `<span class="seal" aria-hidden="true">${esc(sealChar(c))}</span>`;
 function spark(vals) {
-  if (!vals || vals.length < 2) return '<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><line x1="2" y1="12" x2="62" y2="12" stroke="#c9c4b5" stroke-width="1.5" stroke-dasharray="2 3"/></svg>';
+  if (!vals || vals.length < 2) return '<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><line x1="2" y1="12" x2="62" y2="12" stroke="#c9d0d7" stroke-width="1.5" stroke-dasharray="2 3"/></svg>';
   let lo = Math.min(...vals), hi = Math.max(...vals); if (lo === hi) { lo -= 1; hi += 1; }
   const pts = vals.map((v, i) => `${(2 + (i / (vals.length - 1)) * 60).toFixed(1)},${(21 - ((v - lo) / (hi - lo)) * 18).toFixed(1)}`).join(' ');
-  return `<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${vals[vals.length - 1] >= vals[0] ? '#0f5e52' : '#b4472b'}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 64 24" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${vals[vals.length - 1] >= vals[0] ? '#00754a' : '#d0342c'}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
 const tagFor = (s) => ({ accepted: '<span class="tag acc">受付済み</span>', filled: '<span class="tag fill">成立済み</span>', cancelled: '<span class="tag cx">取消済み</span>', lapsed: '<span class="tag lap">失効</span>' }[s] || esc(s));
 const sideJa = (o) => `${o.side === 'buy' ? '買い' : '売り'}`;
@@ -333,7 +333,7 @@ function homeChartPts(series, upto) {
   const n = Math.max(2, series.length); const x = (i) => 4 + (i / (n - 1)) * 592, y = (v) => 110 - ((v - lo) / (hi - lo)) * 100;
   return series.slice(0, upto).map((s, i) => `${x(i).toFixed(1)},${y(s.total).toFixed(1)}`).join(' ');
 }
-const homeChart = (series) => `<svg class="chart home" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="総資産の動き"><line x1="0" y1="119" x2="600" y2="119" stroke="#17223b" stroke-width="1"/><polyline id="homeline" points="${homeChartPts(series, series.length)}" fill="none" stroke="#0f5e52" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+const homeChart = (series) => `<svg class="chart home" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="総資産の動き"><line x1="0" y1="119" x2="600" y2="119" stroke="#c9d0d7" stroke-width="1"/><polyline id="homeline" points="${homeChartPts(series, series.length)}" fill="none" stroke="#00754a" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 const plBig = (n) => `<span class="plbig ${n > 0 ? 'pos' : n < 0 ? 'neg' : ''}"><small>${n > 0 ? '▲ 利益' : n < 0 ? '▼ 損失' : '損益'}</small>${n === 0 ? '0' : signYen(n).replace('円', '')}<small>円</small></span>`;
 // NISA口座と普通の口座（課税口座）の比較。計算はサーバー、画面は表示のみ
 function nisaLine(z) {
