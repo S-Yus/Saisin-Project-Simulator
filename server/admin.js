@@ -191,6 +191,15 @@ function purgeNow(db, id, confirmName, nowMs, role) {
   if (!r.ok) throw new HttpError(500, '削除に失敗しました。自動で再試行されます: ' + r.error);
   return r;
 }
+// 説明会そのものを一覧から消す。先に利用を止め、参加者データを削除してから、説明会の行を消す（取り消せない）。削除記録と監査ログは残す
+function deleteEvent(db, id, nowMs, role) {
+  const ev = eventRow(db, id);
+  db.prepare("UPDATE events SET admin_state='stopped' WHERE id=?").run(id);
+  if (!ev.purged_at) { const r = purgeEvent(db, id, 'deleted', nowMs); if (!r.ok) throw new HttpError(500, '参加者データの削除に失敗したため、説明会は消していません: ' + r.error); }
+  db.prepare('DELETE FROM events WHERE id=?').run(id);
+  audit(db, nowMs, role, 'event.delete', id, String(ev.name).slice(0, 80));
+  return { ok: true };
+}
 function purgeStatus(db) {
   return {
     log: db.prepare('SELECT * FROM purge_log ORDER BY id DESC LIMIT 50').all(),
@@ -198,4 +207,4 @@ function purgeStatus(db) {
   };
 }
 
-module.exports = { previewDataset, createEvent, updateEvent, recordVerification, setState, retentionPreview, setRetention, listEvents, listDatasets, setLicense, importDataset, lockDataset, purgeEvent, runPurgeJob, purgeNow, purgeStatus, audit };
+module.exports = { previewDataset, createEvent, updateEvent, recordVerification, setState, retentionPreview, setRetention, listEvents, listDatasets, setLicense, importDataset, lockDataset, purgeEvent, runPurgeJob, purgeNow, deleteEvent, purgeStatus, audit };

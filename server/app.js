@@ -100,7 +100,7 @@ function createApp(db, opts = {}) {
     if (!role) { if (recent.length >= 10) throw new HttpError(429, '認証の失敗が続いたため一時的に制限しています'); if (tok || ck) failed(); throw new HttpError(401, '管理者認証が必要です'); }
     // Cookie で認証した変更操作は、同じサイトの画面からの要求だけを受け付ける（他サイトからの送信を拒否）
     if (via === 'session' && m !== 'GET' && req.headers.origin) { let oh = ''; try { oh = new URL(req.headers.origin).host; } catch { /* 不正な Origin */ } if (oh !== req.headers.host) throw new HttpError(403, 'この画面以外からの操作は受け付けません'); }
-    const body = m === 'GET' ? {} : await readBody(req, 12 * 1024 * 1024);
+    const body = m === 'GET' || m === 'DELETE' ? {} : await readBody(req, 12 * 1024 * 1024);
     if (m === 'POST' && p === '/password') {
       if (via !== 'session') throw new HttpError(400, 'パスワードの変更はログインして行ってください');
       if (!AU.verify(db, user, body.current)) { failed(); throw new HttpError(401, '現在のパスワードが違います'); }
@@ -127,11 +127,13 @@ function createApp(db, opts = {}) {
         db.prepare('UPDATE events SET created_by=? WHERE id=?').run(user, r.id); return r;
       }
       if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/(enable|pause|resume|emergency_stop)$/))) { own(mm[1]); return A.setState(db, mm[1], mm[2], t, role); }
+      if (m === 'DELETE' && (mm = p.match(/^\/events\/(\w+)$/))) { own(mm[1]); return A.deleteEvent(db, mm[1], t, role); }
       throw new HttpError(403, 'テスト用アカウントではこの操作はできません');
     }
     needOp();
     if (m === 'POST' && p === '/events') { const r = A.createEvent(db, body, t, role); if (user) db.prepare('UPDATE events SET created_by=? WHERE id=?').run(user, r.id); return r; }
     if (m === 'PATCH' && (mm = p.match(/^\/events\/(\w+)$/))) return A.updateEvent(db, mm[1], body, t, role);
+    if (m === 'DELETE' && (mm = p.match(/^\/events\/(\w+)$/))) return A.deleteEvent(db, mm[1], t, role);
     if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/(enable|pause|resume|emergency_stop)$/))) return A.setState(db, mm[1], mm[2], t, role);
     if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/retention-preview$/))) return A.retentionPreview(db, mm[1], body.hours, t);
     if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/retention$/))) return A.setRetention(db, mm[1], body.hours, body.confirm === true, t, role);

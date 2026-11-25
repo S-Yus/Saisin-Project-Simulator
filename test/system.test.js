@@ -476,3 +476,27 @@ test('管理画面のログイン: IDとパスワード、実用とテスト用�
     assert.equal((await req('GET', '/whoami', { headers: { Authorization: 'Bearer ' + 'o'.repeat(40) } })).body.via, 'token');
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+test('説明会の削除: 参加者データごと消え、一覧から無くなる。参加コードは使えなくなる。テスト用アカウントは自分の説明会だけ消せる。削除記録は残る', async () => {
+  const AU = require('../server/auth');
+  const env = setup(bundle36(), {}); const a = api(env); const tok = a.join(); a.order(tok, { instrument_id: 'F1', side: 'buy', amount: 50000 }); a.advance(tok, 'month');
+  AU.setUser(env.db, 'trial', 'tester', 'battery-staple-7', 'x');
+  const app = createApp(env.db, { operatorToken: 'o'.repeat(40), verifierToken: 'v'.repeat(40), quiet: true, now: () => env.now });
+  await new Promise((r) => app.server.listen(0, '127.0.0.1', r)); const base = `http://127.0.0.1:${app.server.address().port}`;
+  const req = async (method, p, { body, cookie, token } = {}) => { const r = await fetch(base + p, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, body: await r.json(), set: r.headers.get('set-cookie') || '' }; };
+  try {
+    const c = { cookie: (await req('POST', '/admin-api/login', { body: { id: 'trial', password: 'battery-staple-7' } })).set.split(';')[0] };
+    assert.equal((await req('DELETE', `/admin-api/events/${env.ev.id}`, c)).status, 403, 'テスト用は他人の説明会を消せない');
+    assert.equal((await req('DELETE', `/admin-api/events/${env.ev.id}`, { token: 'v'.repeat(40) })).status, 403, '確認担当は消せない');
+    const mine = await req('POST', '/admin-api/events', { ...c, body: { name: 'けす', max_participants: 5, starts_at: new Date(env.now).toISOString(), ends_at: new Date(env.now + 3600000).toISOString(), initial_cash: 1000000, monthly_deposit: 30000, dataset_id: env.ev.dataset_id, sim_start: env.ev.sim_start, sim_end: env.ev.sim_end } });
+    assert.equal((await req('DELETE', `/admin-api/events/${mine.body.id}`, c)).status, 200); assert.equal((await req('GET', '/admin-api/events', c)).body.events.length, 0);
+    // 実用（ここでは運用トークン）で、参加者のいる開催中の説明会を消す
+    const cnt = (t) => env.db.prepare(`SELECT COUNT(*) c FROM ${t}`).get().c; assert.ok(cnt('participants') > 0 && cnt('ledger') > 0);
+    assert.equal((await req('DELETE', `/admin-api/events/${env.ev.id}`, { token: 'o'.repeat(40) })).status, 200);
+    for (const t of ['events', 'participants', 'accounts', 'holdings', 'orders', 'ledger', 'snapshots', 'receivables', 'plans', 'requests']) assert.equal(cnt(t), 0, t);
+    assert.equal((await req('GET', `/api/event?code=${env.ev.join_code}`)).status, 404); assert.ok((await req('GET', '/api/me', { token: tok })).status >= 400);
+    assert.equal((await req('DELETE', `/admin-api/events/${env.ev.id}`, { token: 'o'.repeat(40) })).status, 404, '2回目は見つからない');
+    assert.ok(env.db.prepare("SELECT COUNT(*) c FROM purge_log WHERE kind='deleted' AND status='done'").get().c >= 1); assert.equal(env.db.prepare("SELECT COUNT(*) c FROM admin_audit WHERE action='event.delete'").get().c, 2);
+    assert.equal(cnt('datasets'), 1, '市場データは消えない');
+  } finally { await new Promise((r) => app.server.close(r)); }
+});

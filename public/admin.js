@@ -1,5 +1,5 @@
 'use strict';
-const PUB = { url: '' }; // 参加者が開く公開URL（サーバーの設定 PUBLIC_URL）
+const PUB = { url: '' }; const LIVE = ['open', 'not_started', 'paused']; let EVENTS = []; // 参加者が開く公開URL（サーバーの設定 PUBLIC_URL）
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // ログインはIDとパスワード。ログイン状態はサーバーが発行する HttpOnly の Cookie で保たれ、画面のスクリプトからは読めない（12時間で切れる）。
@@ -35,13 +35,13 @@ function loginView(msg) {
 }
 async function main() {
   const [ev, ds, pg] = await Promise.all([api('GET', '/events'), api('GET', '/datasets'), api('GET', '/purge')]);
-  PUB.url = ev.public_url || '';
+  PUB.url = ev.public_url || ''; EVENTS = ev.events;
   const op = who.role === 'operator'; const run = op || who.role === 'tester'; // run: 説明会を作成・操作できる
   $('#app').innerHTML = `<h1>管理画面 <span class="tag ${who.role === 'tester' ? 'prov' : 'acc'}">${esc(who.role_ja)}${who.user ? ' ' + esc(who.user) : ''}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="reload">最新の状態に更新</button> <button class="linkbtn" id="logout">ログアウト</button></div>
   ${pg.failing.length ? `<div class="msg err"><b>削除ジョブが失敗しています</b>（開催 ${pg.failing.map(esc).join(', ')}）。自動で再試行しますが、続く場合は対応してください。</div>` : ''}
   ${who.role === 'tester' ? '<div class="msg info">テスト用アカウントです。説明会の作成（定員50人・7日まで。名前の先頭に【テスト】が付きます）と、自分が作った説明会の操作だけができます。</div>' : ''}
   ${run ? quickForm(ds.datasets) : ''}
-  <h2 class="sec">説明会の一覧</h2>${ev.events.map((e) => eventCard(e, op, run)).join('') || '<div class="msg info">まだ説明会がありません。上の「説明会をはじめる」から作成してください。</div>'}
+  <div class="sechead"><h2 class="sec">説明会の一覧</h2>${run && ev.events.some((e) => !LIVE.includes(e.status)) ? '<button class="linkbtn" id="del-done">終了・停止した説明会をまとめて削除</button>' : ''}</div>${ev.events.map((e) => eventCard(e, op, run)).join('') || '<div class="msg info">まだ説明会がありません。上の「説明会をはじめる」から作成してください。</div>'}
   ${who.role === 'tester' ? '' : `<h2 class="sec">くわしい設定</h2>
   ${op ? `<details class="adv"><summary>日時・期間・金額を指定して作成する</summary>${createForm(ds.datasets)}</details>` : ''}
   <details class="adv"><summary>市場データ（${ds.datasets.length}件）</summary>${ds.datasets.map(dsCard).join('') || '<div class="msg warn">データ未設定です。下から取り込んでください（入力仕様: docs/DATA_INPUT.md）。</div>'}${op ? importForm() : ''}</details>
@@ -49,6 +49,12 @@ async function main() {
   <details class="adv"><summary>確認対象の構成</summary><div class="card"><pre>計算仕様版: ${esc(who.calc_spec_version)}\n実行コード: ${esc(who.code_hash)}\nNode: ${esc(who.node)}</pre></div></details>`}
   ${who.via === 'session' ? `<details class="adv"><summary>パスワードを変更する</summary><label for="pw-c">現在のパスワード</label><input id="pw-c" type="password" autocomplete="current-password"><label for="pw-n">新しいパスワード（10文字以上）</label><input id="pw-n" type="password" autocomplete="new-password"><div class="btns"><button class="btn" id="pw-go">変更する</button></div><div id="pw-msg"></div></details>` : ''}`;
   $('#reload').onclick = () => main();
+  $('#del-done')?.addEventListener('click', async () => {
+    const list = EVENTS.filter((e) => !LIVE.includes(e.status)); if (!list.length) return;
+    if (!confirm(`終了・停止した説明会 ${list.length} 件を削除します（開催中・開始前・一時停止中のものは残ります）。参加者のデータも消え、取り消せません。`)) return;
+    let ok = 0; for (const e of list) { try { await api('DELETE', `/events/${e.id}`); ok++; } catch (err) { toast(`「${e.name}」: ${err.message}`, true); } }
+    await main(); toast(`${ok} 件を削除しました`);
+  });
   $('#logout').onclick = async () => { try { await api('POST', '/logout'); } catch { /* 切れていても画面は戻す */ } tokStore.clear(); who = null; loginView(); };
   $('#pw-go')?.addEventListener('click', async () => {
     try { await api('POST', '/password', { current: $('#pw-c').value, new: $('#pw-n').value }); $('#pw-c').value = ''; $('#pw-n').value = ''; $('#pw-msg').innerHTML = '<div class="msg ok">パスワードを変更しました。ほかの端末でのログインは無効になりました。</div>'; }
@@ -60,13 +66,13 @@ function eventCard(e, op, run) {
   const c = e.configuration; const v = e.verification;
   const joinUrl = `${PUB.url || location.origin}/?code=${e.join_code}`;
   const localOnly = !PUB.url && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  const live = !e.purged_at && ['open', 'not_started', 'paused'].includes(e.status);
+  const live = !e.purged_at && LIVE.includes(e.status);
   const B = (act, label, cls = '') => `<button class="btn ${cls}" data-act="${act}">${label}</button>`;
   const acts = e.purged_at || !run ? '' : e.admin_state === 'draft' ? B('enable', '公開する', 'pri') : e.admin_state === 'enabled' ? B('pause', '一時停止') + B('emergency_stop', '終了する（緊急停止）', 'danger') : e.admin_state === 'paused' ? B('resume', '再開する', 'pri') + B('emergency_stop', '終了する（緊急停止）', 'danger') : '';
   return `<div class="card evcard" data-ev="${esc(e.id)}"><h3 style="margin-top:0">${esc(e.name)} <span class="tag ${e.status === 'open' ? 'acc' : 'prov'}">${esc(e.status_ja)}</span></h3>
   <div class="evmeta"><b>参加 ${e.participants} / ${e.max_participants}人</b><span>${fdt(e.starts_at)} 〜 ${fdt(e.ends_at)}</span></div>
   ${live ? `${localOnly ? '<div class="msg warn">公開URL（環境変数 PUBLIC_URL）が未設定です。このQRコードはこのPCからしか開けません。</div>' : ''}<div class="sub joinurl">参加URL: <code>${esc(joinUrl)}</code></div>` : ''}
-  <div class="btns">${live ? `<button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}" data-qrid="${esc(e.id)}">QRコードを表示</button>` : ''}${acts}</div>
+  <div class="btns">${live ? `<button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}" data-qrid="${esc(e.id)}">QRコードを表示</button>` : ''}${acts}${run ? `<button class="btn quiet del" data-act="delete" data-name="${esc(e.name)}" data-n="${e.participants}" data-live="${live ? 1 : 0}">削除</button>` : ''}</div>
   ${who.role === 'tester' ? '' : `<details class="more"><summary>くわしく（設定・動作確認・削除）</summary>
   <div class="sub">操作状態 ${esc(e.admin_state)}</div>
   <div class="sub">削除予定: <b>${e.purged_at ? '削除済み ' + fdt(e.purged_at) : fdt(e.purge_at)}</b>（終了後 ${e.retention_hours} 時間）</div>
@@ -174,6 +180,7 @@ function wire() {
           f('rmsg').querySelector('button').onclick = async () => { try { await api('POST', `/events/${id}/retention`, { hours: Number(f('hours').value), confirm: true }); toast('保持時間を変更しました'); main(); } catch (e) { toast(e.message, true); } };
           return;
         } else if (a === 'purge') { if (!confirm('参加者データを今すぐ削除します。取り消せません。')) return; await api('POST', `/events/${id}/purge`, { confirm_name: f('pname').value }); toast('削除しました'); }
+        else if (a === 'delete') { if (!confirm(`「${b.dataset.name}」を削除します。${b.dataset.live === '1' ? '開催中の説明会です。参加者は直ちに使えなくなります。' : ''}${Number(b.dataset.n) ? `参加者 ${b.dataset.n} 人のデータも消えます。` : ''}取り消せません。`)) return; await api('DELETE', `/events/${id}`); toast('削除しました'); }
         else if (a === 'emergency_stop') { if (!confirm('緊急停止します。参加者は直ちに利用できなくなります。')) return; await api('POST', `/events/${id}/emergency_stop`); toast('緊急停止しました'); }
         else { await api('POST', `/events/${id}/${a}`); toast('実行しました'); }
         main();

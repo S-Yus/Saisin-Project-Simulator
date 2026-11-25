@@ -61,6 +61,7 @@
 - `POST /admin-api/login` `{id, password}` → Cookie `nisa_admin`（HttpOnly）を発行し、`{ok, role, user}` を返す。誤りは 401（IDの有無によらず同じ文言）、制限中は 429。
 - `POST /admin-api/logout`、`POST /admin-api/password` `{current, new}`（ログイン中のみ。規則に合わなければ 422）。
 - `GET /admin-api/whoami` → `{role: operator|tester|verifier, user, via: session|token, role_ja, ...}`。
+- `DELETE /admin-api/events/:id` … 説明会を削除（参加者データを消してから説明会を消す。operator、または自分が作った説明会の tester）。
 - 認証は Cookie（ログイン）か `Authorization: Bearer <管理トークン>`。tester は `GET /events`（自分の分だけ）・`GET /datasets`・`POST /events`（上限つき）・自分の説明会の `enable|pause|resume|emergency_stop` だけが許され、ほかは 403。
 
 ### `GET /api/me` の主な項目
