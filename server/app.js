@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const cfg = require('./config');
 const S = require('./service');
 const A = require('./admin');
+const AU = require('./auth');
 const { HttpError } = S;
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -22,6 +23,7 @@ function createApp(db, opts = {}) {
   const operatorToken = opts.operatorToken ?? cfg.OPERATOR_TOKEN, verifierToken = opts.verifierToken ?? cfg.VERIFIER_TOKEN;
   const fails = new Map(); // 管理認証の失敗制限（IP単位、メモリのみ）
   const joins = new Map();
+  const locks = new Map(); // ログイン失敗によるIDごとの一時停止（メモリのみ）
   const limit = (m, key, max, winMs) => { const t = now(); const a = (m.get(key) || []).filter((x) => t - x < winMs); a.push(t); m.set(key, a); return a.length > max; };
 
   function readBody(req, max) {
@@ -72,21 +74,63 @@ function createApp(db, opts = {}) {
 
   async function adminApi(req, res, url) {
     const t = now(); const tok = bearer(req); const ip = clientIp(req);
-    let role = null;
-    if (operatorToken && tok && safeEq(tok, operatorToken)) role = 'operator'; else if (verifierToken && tok && safeEq(tok, verifierToken)) role = 'verifier';
-    const recent = (fails.get(ip) || []).filter((x) => t - x < 60000);
-    if (!role) { if (recent.length >= 10) throw new HttpError(429, '認証の失敗が続いたため一時的に制限しています'); recent.push(t); fails.set(ip, recent); throw new HttpError(401, '管理者認証が必要です'); }
     const m = req.method; const p = url.pathname.replace('/admin-api', '');
+    const recent = (fails.get(ip) || []).filter((x) => t - x < 60000);
+    const failed = () => { recent.push(t); fails.set(ip, recent); };
+    const secure = cfg.ENV !== 'dev' || req.headers['x-forwarded-proto'] === 'https';
+    // ログイン（IDとパスワード）。失敗は送信元ごとに1分10回まで、同じIDで5回続くと15分使えない
+    if (m === 'POST' && p === '/login') {
+      if (recent.length >= 10) throw new HttpError(429, '認証の失敗が続いたため一時的に制限しています');
+      const b0 = await readBody(req, 4096); const id = String(b0.id || '').trim().toLowerCase().slice(0, 64);
+      const lk = locks.get(id); if (lk && lk.until > t) throw new HttpError(429, 'ログインの失敗が続いたため、このIDは一時的に使えません。15分ほど待ってからやり直してください');
+      const u = AU.verify(db, id, b0.password);
+      if (!u) {
+        failed(); const cur = lk && t - lk.first < 900000 ? lk : { count: 0, first: t }; cur.count += 1; cur.until = cur.count >= 5 ? t + 900000 : 0; locks.set(id, cur);
+        if (locks.size > 5000) locks.clear();
+        throw new HttpError(401, 'IDまたはパスワードが違います');
+      }
+      locks.delete(id); res.setHeader('Set-Cookie', AU.setCookie(AU.createSession(db, u, t), secure)); A.audit(db, t, u.role, 'admin.login', null, u.id);
+      return { ok: true, role: u.role, user: u.id };
+    }
+    // 認証: ①ログイン済みの Cookie ②管理トークン（確認担当・復旧・運用スクリプト用）
+    let role = null, user = null, via = null; const ck = AU.cookieOf(req);
+    if (ck) { const s = AU.getSession(db, ck, t); if (s) { role = s.role; user = s.id; via = 'session'; } }
+    if (!role && tok) { if (operatorToken && safeEq(tok, operatorToken)) role = 'operator'; else if (verifierToken && safeEq(tok, verifierToken)) role = 'verifier'; if (role) via = 'token'; }
+    if (m === 'POST' && p === '/logout') { AU.destroySession(db, ck); res.setHeader('Set-Cookie', AU.setCookie('', secure)); return { ok: true }; }
+    if (!role) { if (recent.length >= 10) throw new HttpError(429, '認証の失敗が続いたため一時的に制限しています'); if (tok || ck) failed(); throw new HttpError(401, '管理者認証が必要です'); }
+    // Cookie で認証した変更操作は、同じサイトの画面からの要求だけを受け付ける（他サイトからの送信を拒否）
+    if (via === 'session' && m !== 'GET' && req.headers.origin) { let oh = ''; try { oh = new URL(req.headers.origin).host; } catch { /* 不正な Origin */ } if (oh !== req.headers.host) throw new HttpError(403, 'この画面以外からの操作は受け付けません'); }
     const body = m === 'GET' ? {} : await readBody(req, 12 * 1024 * 1024);
+    if (m === 'POST' && p === '/password') {
+      if (via !== 'session') throw new HttpError(400, 'パスワードの変更はログインして行ってください');
+      if (!AU.verify(db, user, body.current)) { failed(); throw new HttpError(401, '現在のパスワードが違います'); }
+      try { AU.setUser(db, user, role, body.new, S.iso(t)); } catch (e) { throw new HttpError(422, e.message); }
+      res.setHeader('Set-Cookie', AU.setCookie(AU.createSession(db, { id: user }, t), secure)); A.audit(db, t, role, 'admin.password', null, user);
+      return { ok: true };
+    }
+    const TESTER_MAX = { participants: 50, hours: 168 }; // テスト用アカウントで作れる説明会の上限（定員・長さ）
+    const own = (id) => { const e = db.prepare('SELECT created_by FROM events WHERE id=?').get(id); if (!e || e.created_by !== user) throw new HttpError(403, 'テスト用アカウントでは、自分が作った説明会だけを操作できます'); };
     const needOp = () => { if (role !== 'operator') throw new HttpError(403, 'この操作の権限がありません（運用担当のみ）'); };
     let mm;
-    if (m === 'GET' && p === '/whoami') return { role, env: cfg.ENV, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION, code_hash: cfg.CODE_HASH, node: process.version, server_now: S.iso(t) };
-    if (m === 'GET' && p === '/events') return { events: A.listEvents(db, t), public_url: opts.publicUrl ?? cfg.PUBLIC_URL };
+    if (m === 'GET' && p === '/whoami') return { role, user, via, role_ja: AU.ROLE_JA[role] || (role === 'verifier' ? '確認担当' : '運用担当（トークン）'), env: cfg.ENV, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION, code_hash: cfg.CODE_HASH, node: process.version, server_now: S.iso(t) };
+    if (m === 'GET' && p === '/events') return { events: A.listEvents(db, t).filter((e) => role !== 'tester' || e.created_by === user), public_url: opts.publicUrl ?? cfg.PUBLIC_URL };
     if (m === 'GET' && p === '/datasets') return { datasets: A.listDatasets(db) };
-    if (m === 'GET' && p === '/purge') return A.purgeStatus(db);
+    if (m === 'GET' && p === '/purge') return role === 'tester' ? { failing: [], log: [] } : A.purgeStatus(db);
     if (m === 'POST' && (mm = p.match(/^\/events\/([\w]+)\/verify$/))) { if (role !== 'verifier') throw new HttpError(403, '動作確認の記録は確認担当のみ可能です（運用担当とは別トークン）'); return A.recordVerification(db, mm[1], body, t, role); }
+    if (role === 'tester') {
+      // テスト用アカウント: 説明会の作成と、自分が作った説明会の公開・一時停止・再開・終了だけ
+      if (m === 'POST' && p === '/events') {
+        if (typeof body.name !== 'string' || !body.name.trim()) throw new HttpError(422, '説明会の名前を入れてください');
+        if (!(body.max_participants <= TESTER_MAX.participants)) throw new HttpError(422, `テスト用アカウントで作れる説明会の定員は${TESTER_MAX.participants}人までです`);
+        if (!(Date.parse(body.ends_at) - Date.parse(body.starts_at) <= TESTER_MAX.hours * 3600000)) throw new HttpError(422, 'テスト用アカウントで作れる説明会は7日までです');
+        const r = A.createEvent(db, { ...body, name: ('【テスト】' + body.name.trim().replace(/^【テスト】/, '')).slice(0, 80) }, t, role);
+        db.prepare('UPDATE events SET created_by=? WHERE id=?').run(user, r.id); return r;
+      }
+      if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/(enable|pause|resume|emergency_stop)$/))) { own(mm[1]); return A.setState(db, mm[1], mm[2], t, role); }
+      throw new HttpError(403, 'テスト用アカウントではこの操作はできません');
+    }
     needOp();
-    if (m === 'POST' && p === '/events') return A.createEvent(db, body, t, role);
+    if (m === 'POST' && p === '/events') { const r = A.createEvent(db, body, t, role); if (user) db.prepare('UPDATE events SET created_by=? WHERE id=?').run(user, r.id); return r; }
     if (m === 'PATCH' && (mm = p.match(/^\/events\/(\w+)$/))) return A.updateEvent(db, mm[1], body, t, role);
     if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/(enable|pause|resume|emergency_stop)$/))) return A.setState(db, mm[1], mm[2], t, role);
     if (m === 'POST' && (mm = p.match(/^\/events\/(\w+)\/retention-preview$/))) return A.retentionPreview(db, mm[1], body.hours, t);

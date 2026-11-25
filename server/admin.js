@@ -125,7 +125,7 @@ function listEvents(db, nowMs) {
     return {
       id: ev.id, name: ev.name, join_code: ev.join_code, starts_at: ev.starts_at, ends_at: ev.ends_at, retention_hours: ev.retention_hours, purge_at: S.purgeAt(ev), purged_at: ev.purged_at,
       max_participants: ev.max_participants, participants: db.prepare('SELECT COUNT(*) c FROM participants WHERE event_id=?').get(ev.id).c,
-      admin_state: ev.admin_state, status: st, status_ja: S.STATUS_JA[st], dataset: ds, sim_start: ev.sim_start, sim_end: ev.sim_end, initial_cash: ev.initial_cash, monthly_deposit: ev.monthly_deposit, provisional: JSON.parse(ev.provisional_json),
+      admin_state: ev.admin_state, created_by: ev.created_by || null, status: st, status_ja: S.STATUS_JA[st], dataset: ds, sim_start: ev.sim_start, sim_end: ev.sim_end, initial_cash: ev.initial_cash, monthly_deposit: ev.monthly_deposit, provisional: JSON.parse(ev.provisional_json),
       configuration: { env: cfg.ENV, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION, code_hash: cfg.CODE_HASH, dataset_hash: ds?.content_hash || null, fingerprint: fp },
       verification: ev.verified_fingerprint ? { by: ev.verified_by, at: ev.verified_at, reference: ev.verification_ref, note: ev.verification_note, valid: ev.verified_fingerprint === fp } : null,
     };

@@ -57,6 +57,12 @@
 | `POST /api/plans/{id}` | 積立の変更。`{request_id, action: amount/pause/resume/cancel, amount?}` |
 | `POST /api/restart` `{request_id, initial_cash?, monthly_deposit?}` | 結果を保存してやり直す（10回まで）。金額を省略すれば同じ条件、指定すれば条件を変える |
 
+### 管理APIの認証（0.10.0）
+- `POST /admin-api/login` `{id, password}` → Cookie `nisa_admin`（HttpOnly）を発行し、`{ok, role, user}` を返す。誤りは 401（IDの有無によらず同じ文言）、制限中は 429。
+- `POST /admin-api/logout`、`POST /admin-api/password` `{current, new}`（ログイン中のみ。規則に合わなければ 422）。
+- `GET /admin-api/whoami` → `{role: operator|tester|verifier, user, via: session|token, role_ja, ...}`。
+- 認証は Cookie（ログイン）か `Authorization: Bearer <管理トークン>`。tester は `GET /events`（自分の分だけ）・`GET /datasets`・`POST /events`（上限つき）・自分の説明会の `enable|pause|resume|emergency_stop` だけが許され、ほかは 403。
+
 ### `GET /api/me` の主な項目
 - `nisa{gain, tax, after_tax, rate_text, annual_limit, over_limit_years[{year, bought}]}`: NISA口座と普通の口座の比較（概算。SPEC §6b）。`tax` は普通の口座だった場合の税額、`after_tax` は手元に残る利益。
 - `news[]` の各件に `explain`（解説。なければ null）と `views[{label, text}]`（考え方の例2つ。なければ null）。

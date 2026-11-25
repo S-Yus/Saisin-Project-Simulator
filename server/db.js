@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS actions(
   dataset_id TEXT NOT NULL, seq INTEGER NOT NULL, instrument_id TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN('split','dividend')),
   ex_date TEXT NOT NULL, num INTEGER, den INTEGER, per_unit_milli INTEGER, pay_date TEXT,
   PRIMARY KEY(dataset_id, seq));
+CREATE TABLE IF NOT EXISTS admin_users(
+  id TEXT PRIMARY KEY, role TEXT NOT NULL CHECK(role IN('operator','tester')), salt TEXT NOT NULL, hash TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_sessions(
+  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS news(
   dataset_id TEXT NOT NULL, id TEXT NOT NULL, published_date TEXT NOT NULL, summary TEXT NOT NULL,
   source_name TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY(dataset_id, id));
@@ -96,6 +100,7 @@ const PARTICIPANT_TABLES_BY_ACCOUNT = ['holdings', 'orders', 'receivables', 'led
 // 既存DBへの列追加（前方互換の移行。削除・型変更はしない）
 const MIGRATIONS = [
   ['receivables', 'qty', 'INTEGER'],
+  ['events', 'created_by', 'TEXT'], // 作成した管理アカウントのID（トークンで作った場合は NULL）
   ['news', 'explain', 'TEXT'], ['news', 'views_json', 'TEXT'], // ニュースの解説と「考え方の例」（任意）
   ['accounts', 'initial_cash', 'INTEGER'], ['accounts', 'monthly_deposit', 'INTEGER'], // 参加者が選んだ資金条件（試行ごと）。NULL は開催回の既定値
   ['actions', 'record_date', 'TEXT'], ['actions', 'fraction_price_milli', 'INTEGER'], ['actions', 'fraction_pay_date', 'TEXT'],

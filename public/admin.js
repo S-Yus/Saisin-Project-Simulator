@@ -2,55 +2,72 @@
 const PUB = { url: '' }; // 参加者が開く公開URL（サーバーの設定 PUBLIC_URL）
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// 管理トークンはメモリ上の変数にのみ保持する（localStorage/sessionStorage/URL/Cookie には保存しない。再読み込みで再入力）
+// ログインはIDとパスワード。ログイン状態はサーバーが発行する HttpOnly の Cookie で保たれ、画面のスクリプトからは読めない（12時間で切れる）。
+// 管理トークン（確認担当・復旧用）で入った場合は、メモリ上の変数にのみ保持する（再読み込みで再入力）
 let memToken = null;
 const tokStore = { get: () => memToken, set: (v) => { memToken = v || null; }, clear: () => { memToken = null; } };
 let who = null;
 async function api(method, path, body) {
-  const res = await fetch('/admin-api' + path, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tokStore.get() }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  const data = await res.json().catch(() => ({})); if (!res.ok) { const e = new Error(data.error || 'エラー'); e.status = res.status; throw e; } return data;
+  const res = await fetch('/admin-api' + path, { method, headers: { 'Content-Type': 'application/json', ...(tokStore.get() ? { Authorization: 'Bearer ' + tokStore.get() } : {}) }, credentials: 'same-origin', body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  const data = await res.json().catch(() => ({})); if (!res.ok) { const e = new Error(data.error || 'エラー'); e.status = res.status; if (res.status === 401 && who && path !== '/login' && path !== '/password') { who = null; tokStore.clear(); loginView('ログインが切れました。もう一度ログインしてください'); } throw e; } return data;
 }
 const fdt = (s) => (s ? new Date(s).toLocaleString('ja-JP') : '-');
 const toast = (m, bad) => { const d = document.createElement('div'); d.className = 'msg ' + (bad ? 'err' : 'ok'); d.textContent = m; $('#app').prepend(d); setTimeout(() => d.remove(), 6000); };
 async function login() {
-  if (!tokStore.get()) return loginView();
-  try { who = await api('GET', '/whoami'); } catch { tokStore.clear(); return loginView('認証に失敗しました'); }
+  try { who = await api('GET', '/whoami'); } catch (e) { tokStore.clear(); return loginView(e.status === 429 ? e.message : ''); }
   if (who.env !== 'prod') { const b = $('#envbanner'); b.hidden = false; b.textContent = who.env === 'dev' ? '開発・検算環境（本番ではありません）' : '確認用環境（本番ではありません）'; }
   main();
 }
 function loginView(msg) {
-  $('#app').innerHTML = `<h1>管理画面</h1>${msg ? `<div class="msg err">${esc(msg)}</div>` : ''}<div class="card"><label for="tk">管理トークン</label><input id="tk" type="password" autocomplete="off"><div class="btns"><button class="btn pri" id="go">ログイン</button></div><p class="sub">運用担当（開催・停止・削除）と確認担当（動作確認の記録のみ）は別のトークンです。参加者の口座は閲覧・操作できません。トークンはこの画面のメモリ上にだけ保持し、再読み込みすると再入力が必要です。</p></div>`;
-  const go = () => { tokStore.set($('#tk').value); $('#tk').value = ''; login(); }; $('#go').onclick = go; $('#tk').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  $('#app').innerHTML = `<div class="loginbox"><h1>管理画面</h1><p class="sub">説明会の作成・QRコードの表示・公開と停止を行う画面です。</p>${msg ? `<div class="msg err">${esc(msg)}</div>` : ''}
+  <form id="lf" class="card" autocomplete="on"><label for="lid">ID</label><input id="lid" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+  <label for="lpw">パスワード</label><input id="lpw" name="password" type="password" autocomplete="current-password" required>
+  <div class="btns"><button class="btn pri big" id="lgo" type="submit">ログイン</button></div><div id="lmsg"></div>
+  <p class="fine">ログインは12時間で自動的に切れます。5回続けてまちがえると、そのIDは15分使えなくなります。参加者の口座は、この画面からは閲覧・操作できません。</p></form>
+  <details class="adv"><summary>管理トークンで入る（確認担当・復旧用）</summary><label for="tk">管理トークン</label><input id="tk" type="password" autocomplete="off"><div class="btns"><button class="btn" id="go" type="button">トークンで入る</button></div><p class="fine">トークンはこの画面のメモリ上にだけ保持し、再読み込みすると再入力が必要です。</p></details></div>`;
+  $('#lf').addEventListener('submit', async (e) => {
+    e.preventDefault(); const b = $('#lgo'); b.disabled = true;
+    try { await api('POST', '/login', { id: $('#lid').value, password: $('#lpw').value }); $('#lpw').value = ''; login(); }
+    catch (err) { b.disabled = false; $('#lpw').value = ''; $('#lmsg').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+  });
+  const go = async () => { tokStore.set($('#tk').value); $('#tk').value = ''; try { who = await api('GET', '/whoami'); login(); } catch (err) { tokStore.clear(); loginView(err.status === 429 ? err.message : 'トークンが違います'); } };
+  $('#go').onclick = go; $('#tk').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
 }
 async function main() {
   const [ev, ds, pg] = await Promise.all([api('GET', '/events'), api('GET', '/datasets'), api('GET', '/purge')]);
   PUB.url = ev.public_url || '';
-  const op = who.role === 'operator';
-  $('#app').innerHTML = `<h1>管理画面 <span class="tag">${op ? '運用担当' : '確認担当'}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="reload">最新の状態に更新</button> <button class="linkbtn" id="logout">ログアウト</button></div>
+  const op = who.role === 'operator'; const run = op || who.role === 'tester'; // run: 説明会を作成・操作できる
+  $('#app').innerHTML = `<h1>管理画面 <span class="tag ${who.role === 'tester' ? 'prov' : 'acc'}">${esc(who.role_ja)}${who.user ? ' ' + esc(who.user) : ''}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="reload">最新の状態に更新</button> <button class="linkbtn" id="logout">ログアウト</button></div>
   ${pg.failing.length ? `<div class="msg err"><b>削除ジョブが失敗しています</b>（開催 ${pg.failing.map(esc).join(', ')}）。自動で再試行しますが、続く場合は対応してください。</div>` : ''}
-  ${op ? quickForm(ds.datasets) : ''}
-  <h2 class="sec">説明会の一覧</h2>${ev.events.map((e) => eventCard(e, op)).join('') || '<div class="msg info">まだ説明会がありません。上の「説明会をはじめる」から作成してください。</div>'}
-  <h2 class="sec">くわしい設定</h2>
+  ${who.role === 'tester' ? '<div class="msg info">テスト用アカウントです。説明会の作成（定員50人・7日まで。名前の先頭に【テスト】が付きます）と、自分が作った説明会の操作だけができます。</div>' : ''}
+  ${run ? quickForm(ds.datasets) : ''}
+  <h2 class="sec">説明会の一覧</h2>${ev.events.map((e) => eventCard(e, op, run)).join('') || '<div class="msg info">まだ説明会がありません。上の「説明会をはじめる」から作成してください。</div>'}
+  ${who.role === 'tester' ? '' : `<h2 class="sec">くわしい設定</h2>
   ${op ? `<details class="adv"><summary>日時・期間・金額を指定して作成する</summary>${createForm(ds.datasets)}</details>` : ''}
   <details class="adv"><summary>市場データ（${ds.datasets.length}件）</summary>${ds.datasets.map(dsCard).join('') || '<div class="msg warn">データ未設定です。下から取り込んでください（入力仕様: docs/DATA_INPUT.md）。</div>'}${op ? importForm() : ''}</details>
   <details class="adv"><summary>削除記録（参加者情報を含みません）</summary><div class="card"><table><tr><th>日時</th><th>開催</th><th>種別</th><th>結果</th><th class="n">試行</th><th class="n">件数</th></tr>${pg.log.map((l) => `<tr><td>${fdt(l.at)}</td><td>${esc(l.event_id)}</td><td>${esc(l.kind)}</td><td>${l.status === 'done' ? '完了' : '<b>失敗</b> ' + esc(l.error || '')}</td><td class="n">${l.attempts}</td><td class="n">${l.rows_deleted ?? '-'}</td></tr>`).join('')}</table></div></details>
-  <details class="adv"><summary>確認対象の構成</summary><div class="card"><pre>計算仕様版: ${esc(who.calc_spec_version)}\n実行コード: ${esc(who.code_hash)}\nNode: ${esc(who.node)}</pre></div></details>`;
+  <details class="adv"><summary>確認対象の構成</summary><div class="card"><pre>計算仕様版: ${esc(who.calc_spec_version)}\n実行コード: ${esc(who.code_hash)}\nNode: ${esc(who.node)}</pre></div></details>`}
+  ${who.via === 'session' ? `<details class="adv"><summary>パスワードを変更する</summary><label for="pw-c">現在のパスワード</label><input id="pw-c" type="password" autocomplete="current-password"><label for="pw-n">新しいパスワード（10文字以上）</label><input id="pw-n" type="password" autocomplete="new-password"><div class="btns"><button class="btn" id="pw-go">変更する</button></div><div id="pw-msg"></div></details>` : ''}`;
   $('#reload').onclick = () => main();
-  $('#logout').onclick = () => { tokStore.clear(); login(); };
+  $('#logout').onclick = async () => { try { await api('POST', '/logout'); } catch { /* 切れていても画面は戻す */ } tokStore.clear(); who = null; loginView(); };
+  $('#pw-go')?.addEventListener('click', async () => {
+    try { await api('POST', '/password', { current: $('#pw-c').value, new: $('#pw-n').value }); $('#pw-c').value = ''; $('#pw-n').value = ''; $('#pw-msg').innerHTML = '<div class="msg ok">パスワードを変更しました。ほかの端末でのログインは無効になりました。</div>'; }
+    catch (e) { $('#pw-msg').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+  });
   wire();
 }
-function eventCard(e, op) {
+function eventCard(e, op, run) {
   const c = e.configuration; const v = e.verification;
   const joinUrl = `${PUB.url || location.origin}/?code=${e.join_code}`;
   const localOnly = !PUB.url && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   const live = !e.purged_at && ['open', 'not_started', 'paused'].includes(e.status);
   const B = (act, label, cls = '') => `<button class="btn ${cls}" data-act="${act}">${label}</button>`;
-  const acts = e.purged_at || !op ? '' : e.admin_state === 'draft' ? B('enable', '公開する', 'pri') : e.admin_state === 'enabled' ? B('pause', '一時停止') + B('emergency_stop', '終了する（緊急停止）', 'danger') : e.admin_state === 'paused' ? B('resume', '再開する', 'pri') + B('emergency_stop', '終了する（緊急停止）', 'danger') : '';
+  const acts = e.purged_at || !run ? '' : e.admin_state === 'draft' ? B('enable', '公開する', 'pri') : e.admin_state === 'enabled' ? B('pause', '一時停止') + B('emergency_stop', '終了する（緊急停止）', 'danger') : e.admin_state === 'paused' ? B('resume', '再開する', 'pri') + B('emergency_stop', '終了する（緊急停止）', 'danger') : '';
   return `<div class="card evcard" data-ev="${esc(e.id)}"><h3 style="margin-top:0">${esc(e.name)} <span class="tag ${e.status === 'open' ? 'acc' : 'prov'}">${esc(e.status_ja)}</span></h3>
   <div class="evmeta"><b>参加 ${e.participants} / ${e.max_participants}人</b><span>${fdt(e.starts_at)} 〜 ${fdt(e.ends_at)}</span></div>
   ${live ? `${localOnly ? '<div class="msg warn">公開URL（環境変数 PUBLIC_URL）が未設定です。このQRコードはこのPCからしか開けません。</div>' : ''}<div class="sub joinurl">参加URL: <code>${esc(joinUrl)}</code></div>` : ''}
   <div class="btns">${live ? `<button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}" data-qrid="${esc(e.id)}">QRコードを表示</button>` : ''}${acts}</div>
-  <details class="more"><summary>くわしく（設定・動作確認・削除）</summary>
+  ${who.role === 'tester' ? '' : `<details class="more"><summary>くわしく（設定・動作確認・削除）</summary>
   <div class="sub">操作状態 ${esc(e.admin_state)}</div>
   <div class="sub">削除予定: <b>${e.purged_at ? '削除済み ' + fdt(e.purged_at) : fdt(e.purge_at)}</b>（終了後 ${e.retention_hours} 時間）</div>
   <div class="sub">データ: ${e.dataset ? esc(e.dataset.name) + '（' + esc(e.dataset.kind) + '）' : '<b>データ未設定</b>'} ／ 期間 ${esc(e.sim_start || '-')}〜${esc(e.sim_end || '-')} ／ 初期資金 ${e.initial_cash.toLocaleString('ja-JP')}円 ／ 毎月 ${e.monthly_deposit.toLocaleString('ja-JP')}円 <span class="tag prov">${Object.values(e.provisional).some(Boolean) ? '仮設定あり' : '仮設定なし'}</span></div>
@@ -60,7 +77,7 @@ function eventCard(e, op) {
   <div class="sub">金庫による確認は自動テストでは代替できません。確認担当が、確認記録の番号とともに入力してください。</div>
   ${who.role === 'verifier' && c.fingerprint && !e.purged_at ? `<div class="row"><input data-f="vby" placeholder="確認者名"><input data-f="vref" placeholder="確認記録の識別番号"><input data-f="vnote" placeholder="備考（任意）"></div><div class="btns"><button class="btn pri" data-act="verify" data-fp="${esc(c.fingerprint)}">この構成の確認完了を記録</button></div>` : ''}
   ${op && !e.purged_at ? `  <details><summary>保持時間・削除</summary><div class="row"><input data-f="hours" type="number" min="0" value="${e.retention_hours}"><button class="btn" data-act="rprev">影響を確認</button></div><div data-f="rmsg"></div><div class="row"><input data-f="pname" placeholder="即時削除: 開催名を入力"><button class="btn danger" data-act="purge">参加者データを今すぐ削除</button></div></details>` : ''}
-  </details></div>`;
+  </details>`}</div>`;
 }
 // かんたん作成: 名前・長さ・定員だけ決めて、作成→公開→QR表示まで行う（データは固定済みの最新のもの、期間はその全体）
 function quickForm(dsl) {
@@ -70,8 +87,8 @@ function quickForm(dsl) {
   return `<div class="card quick"><h2 class="sec" style="margin-top:0">説明会をはじめる</h2>
   <ol class="steps3"><li>下の3つを決めて「作成してQRコードを表示」を押す</li><li>表示されたQRコードを会場に映す（印刷もできます）</li><li>参加者がスマートフォンで読み取ると、すぐに始まります</li></ol>
   <div class="row"><div><label for="q-name">説明会の名前</label><input id="q-name" maxlength="80" value="NISA説明会 ${esc(today)}"></div>
-  <div><label for="q-len">使える時間（いまから）</label><select id="q-len"><option value="2">2時間</option><option value="4">4時間</option><option value="24">1日</option><option value="168">7日</option><option value="720">30日</option></select></div>
-  <div><label for="q-max">定員（人）</label><input id="q-max" type="number" min="1" max="5000" value="50"></div></div>
+  <div><label for="q-len">使える時間（いまから）</label><select id="q-len"><option value="2">2時間</option><option value="4">4時間</option><option value="24">1日</option><option value="168">7日</option>${who.role === 'tester' ? '' : '<option value="720">30日</option>'}</select></div>
+  <div><label for="q-max">定員（人）</label><input id="q-max" type="number" min="1" max="${who.role === 'tester' ? 50 : 5000}" value="50"></div></div>
   <div class="sub">データ: ${esc(d.name)}（${esc(d.period_start)}〜${esc(d.period_end)}）／ 参加者が金額を選ばなかったときの既定は、最初100万円・毎月3万円 ／ 参加データは終了の24時間後に自動で削除</div>
   <div class="btns"><button class="btn pri big" id="q-go" data-ds="${esc(d.id)}" data-ss="${esc(d.period_start)}" data-se="${esc(d.period_end)}">作成してQRコードを表示</button></div><div id="q-msg"></div></div>`;
 }

@@ -29,7 +29,8 @@
 | ログを見る | `journalctl --user -u nisa-sim -n 100` |
 | プログラムを更新 | `cd ~/nisa-sim && git pull && PATH=~/opt/node/bin:$PATH npm test && systemctl --user restart nisa-sim` |
 | 開催回を作り直す（30日） | `cd ~/nisa-sim && PATH=~/opt/node/bin:$PATH node ops/seed-staging.js 30 && PATH=~/opt/node/bin:$PATH node ops/make-qr.js` |
-| 管理トークンを見る | `grep OPERATOR ~/nisa-sim/.env.staging` |
+| 管理画面のアカウントを作る・パスワードを変える | `cd ~/nisa-sim && ~/opt/node/bin/node --env-file=.env.staging scripts/admin-user.js set <ID> <operator または tester>`（OPERATIONS.md §2a） |
+| 管理トークンを見る（復旧・確認担当用） | `grep OPERATOR ~/nisa-sim/.env.staging` |
 
 このPCからの接続（PowerShell。鍵は `%USERPROFILE%\.ssh\nisa_sakura_ed25519`）:
 

@@ -425,3 +425,54 @@ test('参加用QRコードの公開URL: http(s) のオリジンだけを受け�
     assert.equal(r.status, 200); assert.equal((await r.json()).public_url, 'https://staging.example.jp');
   } finally { await new Promise((r) => srv.close(r)); }
 });
+
+test('管理画面のログイン: IDとパスワード、実用とテスト用の2種類。テスト用は自分の説明会だけ。失敗の制限・ログアウト・パスワード変更・他サイトからの操作の拒否', async () => {
+  const AU = require('../server/auth');
+  const env = setup(bundle36(), {}); let clock = env.now;
+  const app = createApp(env.db, { operatorToken: 'o'.repeat(40), verifierToken: 'v'.repeat(40), quiet: true, now: () => clock });
+  await new Promise((r) => app.server.listen(0, '127.0.0.1', r)); const base = `http://127.0.0.1:${app.server.address().port}/admin-api`;
+  const req = async (method, p, { body, cookie, headers } = {}) => { const r = await fetch(base + p, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, body: await r.json(), set: r.headers.get('set-cookie') || '' }; };
+  const login = async (id, password) => { const r = await req('POST', '/login', { body: { id, password } }); return { ...r, cookie: r.set.split(';')[0] }; };
+  try {
+    // パスワードの規則と保存形式
+    assert.throws(() => AU.setUser(env.db, 'admin', 'operator', 'short', 'x'), /10文字以上/); assert.throws(() => AU.setUser(env.db, 'admin', 'operator', 'my-admin-pass', 'x'), /IDを含めない/);
+    assert.throws(() => AU.setUser(env.db, 'admin', 'operator', 'aaaaaaaaaaaa', 'x'), /5種類以上/); assert.throws(() => AU.setUser(env.db, 'Admin!', 'operator', 'correct-horse-9', 'x'), /ID/); assert.throws(() => AU.setUser(env.db, 'admin', 'root', 'correct-horse-9', 'x'), /種類/);
+    AU.setUser(env.db, 'admin', 'operator', 'correct-horse-9', 'x'); AU.setUser(env.db, 'trial', 'tester', 'battery-staple-7', 'x');
+    const row = env.db.prepare('SELECT * FROM admin_users WHERE id=?').get('admin'); assert.equal(JSON.stringify(row).includes('correct-horse-9'), false); assert.equal(row.hash.length, 128);
+    // ログイン前は拒否。誤ったパスワードも、存在しないIDも同じ応答
+    assert.equal((await req('GET', '/whoami')).status, 401);
+    const bad1 = await login('admin', 'wrong-password-1'), bad2 = await login('nobody', 'wrong-password-1'); assert.equal(bad1.status, 401); assert.equal(bad1.body.error, bad2.body.error);
+    // 実用アカウント
+    const op = await login('admin', 'correct-horse-9'); assert.equal(op.status, 200); assert.match(op.set, /HttpOnly/); assert.match(op.set, /SameSite=Strict/); assert.match(op.set, /Path=\/admin-api/);
+    assert.equal(env.db.prepare('SELECT COUNT(*) c FROM admin_sessions WHERE token_hash=?').get(op.cookie.split('=')[1]).c, 0, 'セッショントークンそのものは保存しない');
+    const w = await req('GET', '/whoami', { cookie: op.cookie }); assert.deepEqual([w.body.role, w.body.user, w.body.via], ['operator', 'admin', 'session']);
+    assert.equal((await req('GET', '/events', { cookie: op.cookie })).body.events.length, 1);
+    // テスト用アカウント: 既存の説明会は見えず操作できない。作成は上限つきで【テスト】が付き、自分のものは操作できる
+    const te = await login('trial', 'battery-staple-7'); const c = { cookie: te.cookie };
+    assert.equal((await req('GET', '/whoami', c)).body.role, 'tester'); assert.equal((await req('GET', '/events', c)).body.events.length, 0);
+    assert.equal((await req('POST', `/events/${env.ev.id}/pause`, c)).status, 403); assert.equal((await req('POST', '/datasets/import', { ...c, body: {} })).status, 403);
+    assert.equal((await req('POST', `/events/${env.ev.id}/purge`, { ...c, body: { confirm_name: 'x' } })).status, 403); assert.equal((await req('PATCH', `/events/${env.ev.id}`, { ...c, body: { name: 'x' } })).status, 403);
+    const mk = (over) => ({ name: 'おためし', max_participants: 10, starts_at: new Date(clock).toISOString(), ends_at: new Date(clock + 3600000).toISOString(), initial_cash: 1000000, monthly_deposit: 30000, dataset_id: env.ev.dataset_id, sim_start: env.ev.sim_start, sim_end: env.ev.sim_end, ...over });
+    assert.equal((await req('POST', '/events', { ...c, body: mk({ max_participants: 51 }) })).status, 422); assert.equal((await req('POST', '/events', { ...c, body: mk({ ends_at: new Date(clock + 8 * 86400000).toISOString() }) })).status, 422);
+    const made = await req('POST', '/events', { ...c, body: mk() }); assert.equal(made.status, 200);
+    const mine = (await req('GET', '/events', c)).body.events; assert.equal(mine.length, 1); assert.equal(mine[0].name, '【テスト】おためし'); assert.equal(mine[0].created_by, 'trial');
+    assert.equal((await req('POST', `/events/${made.body.id}/emergency_stop`, c)).status, 200);
+    assert.equal((await req('GET', '/events', { cookie: op.cookie })).body.events.length, 2, '実用アカウントはすべて見える');
+    // 他サイトからの変更操作は拒否（Cookie認証のとき）
+    assert.equal((await req('POST', `/events/${env.ev.id}/pause`, { cookie: op.cookie, headers: { Origin: 'https://evil.example' } })).status, 403);
+    // パスワード変更: 現在のパスワードが必要。変更後は古いログインが無効になり、新しいパスワードで入れる
+    assert.equal((await req('POST', '/password', { cookie: op.cookie, body: { current: 'nope-nope-nope', new: 'another-good-pass-1' } })).status, 401);
+    assert.equal((await req('POST', '/password', { cookie: op.cookie, body: { current: 'correct-horse-9', new: 'short' } })).status, 422);
+    const ch = await req('POST', '/password', { cookie: op.cookie, body: { current: 'correct-horse-9', new: 'another-good-pass-1' } }); assert.equal(ch.status, 200);
+    assert.equal((await req('GET', '/whoami', { cookie: op.cookie })).status, 401); assert.equal((await login('admin', 'correct-horse-9')).status, 401);
+    const op2 = await login('admin', 'another-good-pass-1'); assert.equal(op2.status, 200);
+    // ログアウト、期限切れ
+    assert.equal((await req('POST', '/logout', { cookie: op2.cookie })).status, 200); assert.equal((await req('GET', '/whoami', { cookie: op2.cookie })).status, 401);
+    const op3 = await login('admin', 'another-good-pass-1'); clock += AU.SESSION_MS + 1000; assert.equal((await req('GET', '/whoami', { cookie: op3.cookie })).status, 401, '12時間で切れる');
+    // 同じIDで5回まちがえると、正しいパスワードでも15分は入れない
+    for (let i = 0; i < 5; i++) { clock += 61000; assert.equal((await login('trial', 'wrong-wrong-wrong')).status, 401); }
+    clock += 61000; assert.equal((await login('trial', 'battery-staple-7')).status, 429); clock += 16 * 60000; assert.equal((await login('trial', 'battery-staple-7')).status, 200);
+    // 管理トークン（確認担当・復旧・運用スクリプト）は引き続き使える
+    assert.equal((await req('GET', '/whoami', { headers: { Authorization: 'Bearer ' + 'o'.repeat(40) } })).body.via, 'token');
+  } finally { await new Promise((r) => app.server.close(r)); }
+});
