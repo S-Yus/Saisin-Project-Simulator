@@ -73,6 +73,8 @@
 最大参加人数は開催回ごとに設定（超過は 429）。会場Wi-FiのNATで全員が同じIPになるため、参加のレート制限は送信元IPあたり毎分600（`JOIN_RATE_PER_MIN`）。測定結果は docs/TEST_REPORT.md。本番相当の環境で `node scripts/loadtest.js 300 60 session` を再実施すること（Linux・実ネットワーク・TLS経由は未測定）。
 
 ## 9. 確認用環境をこのPCから公開する（Cloudflare Tunnel。2026-11-23 設定）
+> **2026-11-25 に、公開元を借りたサーバー（さくらのVPS）へ移した。** トンネルはサーバーで動いているので、このPCでは `opsstart-tunnel.ps1` を実行しない（同じトンネルを2か所で動かさない）。現在の操作は [DEPLOY_SERVER.md](DEPLOY_SERVER.md) の「実際に行った方法」。以下は、このPCから公開していたときの記録。
+
 `staging.nisa-simulator.app` を、このPCで動く確認用アプリ（127.0.0.1:8081）に向けるトンネル `nisa-staging` を作成済み。DNS（CNAME）も登録済み。
 | 操作 | コマンド（`nisa-sim` フォルダで） |
 |---|---|
