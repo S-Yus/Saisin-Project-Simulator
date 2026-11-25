@@ -26,13 +26,16 @@ async function main() {
   const [ev, ds, pg] = await Promise.all([api('GET', '/events'), api('GET', '/datasets'), api('GET', '/purge')]);
   PUB.url = ev.public_url || '';
   const op = who.role === 'operator';
-  $('#app').innerHTML = `<h1>管理画面 <span class="tag">${op ? '運用担当' : '確認担当'}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ 計算仕様版 ${esc(who.calc_spec_version)} ／ コード ${esc(who.code_hash.slice(0, 12))} ／ Node ${esc(who.node)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="logout">ログアウト</button></div>
+  $('#app').innerHTML = `<h1>管理画面 <span class="tag">${op ? '運用担当' : '確認担当'}</span></h1><div class="sub">環境: <b>${esc({ prod: '本番', staging: '確認用環境', dev: '開発・検算' }[who.env] || who.env)}</b> ／ アプリ版 ${esc(who.app_version)} ／ サーバー時刻 ${fdt(who.server_now)} <button class="linkbtn" id="reload">最新の状態に更新</button> <button class="linkbtn" id="logout">ログアウト</button></div>
   ${pg.failing.length ? `<div class="msg err"><b>削除ジョブが失敗しています</b>（開催 ${pg.failing.map(esc).join(', ')}）。自動で再試行しますが、続く場合は対応してください。</div>` : ''}
-  <h2>開催回</h2>${ev.events.map((e) => eventCard(e, op)).join('') || '<div class="msg info">開催回がありません。</div>'}
-  ${op ? createForm(ds.datasets) : ''}
-  <h2>市場データ</h2>${ds.datasets.map(dsCard).join('') || '<div class="msg warn">データ未設定です。下から取り込んでください（入力仕様: docs/DATA_INPUT.md）。</div>'}
-  ${op ? importForm() : ''}
-  <h2>削除記録（参加者情報を含みません）</h2><div class="card"><table><tr><th>日時</th><th>開催</th><th>種別</th><th>結果</th><th class="n">試行</th><th class="n">件数</th></tr>${pg.log.map((l) => `<tr><td>${fdt(l.at)}</td><td>${esc(l.event_id)}</td><td>${esc(l.kind)}</td><td>${l.status === 'done' ? '完了' : '<b>失敗</b> ' + esc(l.error || '')}</td><td class="n">${l.attempts}</td><td class="n">${l.rows_deleted ?? '-'}</td></tr>`).join('')}</table></div>`;
+  ${op ? quickForm(ds.datasets) : ''}
+  <h2 class="sec">説明会の一覧</h2>${ev.events.map((e) => eventCard(e, op)).join('') || '<div class="msg info">まだ説明会がありません。上の「説明会をはじめる」から作成してください。</div>'}
+  <h2 class="sec">くわしい設定</h2>
+  ${op ? `<details class="adv"><summary>日時・期間・金額を指定して作成する</summary>${createForm(ds.datasets)}</details>` : ''}
+  <details class="adv"><summary>市場データ（${ds.datasets.length}件）</summary>${ds.datasets.map(dsCard).join('') || '<div class="msg warn">データ未設定です。下から取り込んでください（入力仕様: docs/DATA_INPUT.md）。</div>'}${op ? importForm() : ''}</details>
+  <details class="adv"><summary>削除記録（参加者情報を含みません）</summary><div class="card"><table><tr><th>日時</th><th>開催</th><th>種別</th><th>結果</th><th class="n">試行</th><th class="n">件数</th></tr>${pg.log.map((l) => `<tr><td>${fdt(l.at)}</td><td>${esc(l.event_id)}</td><td>${esc(l.kind)}</td><td>${l.status === 'done' ? '完了' : '<b>失敗</b> ' + esc(l.error || '')}</td><td class="n">${l.attempts}</td><td class="n">${l.rows_deleted ?? '-'}</td></tr>`).join('')}</table></div></details>
+  <details class="adv"><summary>確認対象の構成</summary><div class="card"><pre>計算仕様版: ${esc(who.calc_spec_version)}\n実行コード: ${esc(who.code_hash)}\nNode: ${esc(who.node)}</pre></div></details>`;
+  $('#reload').onclick = () => main();
   $('#logout').onclick = () => { tokStore.clear(); login(); };
   wire();
 }
@@ -40,8 +43,15 @@ function eventCard(e, op) {
   const c = e.configuration; const v = e.verification;
   const joinUrl = `${PUB.url || location.origin}/?code=${e.join_code}`;
   const localOnly = !PUB.url && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  return `<div class="card" data-ev="${esc(e.id)}"><h3 style="margin-top:0">${esc(e.name)} <span class="tag ${e.status === 'open' ? 'fill' : 'prov'}">${esc(e.status_ja)}</span></h3>
-  <div class="sub">開催 ${fdt(e.starts_at)} 〜 ${fdt(e.ends_at)} ／ 参加 ${e.participants}/${e.max_participants}人 ／ 操作状態 ${esc(e.admin_state)}</div>
+  const live = !e.purged_at && ['open', 'not_started', 'paused'].includes(e.status);
+  const B = (act, label, cls = '') => `<button class="btn ${cls}" data-act="${act}">${label}</button>`;
+  const acts = e.purged_at || !op ? '' : e.admin_state === 'draft' ? B('enable', '公開する', 'pri') : e.admin_state === 'enabled' ? B('pause', '一時停止') + B('emergency_stop', '終了する（緊急停止）', 'danger') : e.admin_state === 'paused' ? B('resume', '再開する', 'pri') + B('emergency_stop', '終了する（緊急停止）', 'danger') : '';
+  return `<div class="card evcard" data-ev="${esc(e.id)}"><h3 style="margin-top:0">${esc(e.name)} <span class="tag ${e.status === 'open' ? 'acc' : 'prov'}">${esc(e.status_ja)}</span></h3>
+  <div class="evmeta"><b>参加 ${e.participants} / ${e.max_participants}人</b><span>${fdt(e.starts_at)} 〜 ${fdt(e.ends_at)}</span></div>
+  ${live ? `${localOnly ? '<div class="msg warn">公開URL（環境変数 PUBLIC_URL）が未設定です。このQRコードはこのPCからしか開けません。</div>' : ''}<div class="sub joinurl">参加URL: <code>${esc(joinUrl)}</code></div>` : ''}
+  <div class="btns">${live ? `<button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}" data-qrid="${esc(e.id)}">QRコードを表示</button>` : ''}${acts}</div>
+  <details class="more"><summary>くわしく（設定・動作確認・削除）</summary>
+  <div class="sub">操作状態 ${esc(e.admin_state)}</div>
   <div class="sub">削除予定: <b>${e.purged_at ? '削除済み ' + fdt(e.purged_at) : fdt(e.purge_at)}</b>（終了後 ${e.retention_hours} 時間）</div>
   <div class="sub">データ: ${e.dataset ? esc(e.dataset.name) + '（' + esc(e.dataset.kind) + '）' : '<b>データ未設定</b>'} ／ 期間 ${esc(e.sim_start || '-')}〜${esc(e.sim_end || '-')} ／ 初期資金 ${e.initial_cash.toLocaleString('ja-JP')}円 ／ 毎月 ${e.monthly_deposit.toLocaleString('ja-JP')}円 <span class="tag prov">${Object.values(e.provisional).some(Boolean) ? '仮設定あり' : '仮設定なし'}</span></div>
   <details><summary>確認対象の構成（動作確認の単位）</summary><pre>環境: ${esc(c.env)}\nアプリ版: ${esc(c.app_version)}\n計算仕様版: ${esc(c.calc_spec_version)}\n実行コード: ${esc(c.code_hash)}\nデータ版(ハッシュ): ${esc(c.dataset_hash || '未固定')}\n構成指紋: ${esc(c.fingerprint || '未確定')}</pre><div class="sub">確認用環境と本番で構成指紋が一致すれば、同じコード・データ・設定です。</div></details>
@@ -49,9 +59,21 @@ function eventCard(e, op) {
   <div>動作確認: ${v ? (v.valid ? `<span class="tag fill">確認済み</span> ${esc(v.by)} / ${fdt(v.at)} / 記録番号 ${esc(v.reference)}` : '<span class="tag lap">解除（構成が変更されました）</span>') : '<span class="tag lap">未確認</span>'}</div>
   <div class="sub">金庫による確認は自動テストでは代替できません。確認担当が、確認記録の番号とともに入力してください。</div>
   ${who.role === 'verifier' && c.fingerprint && !e.purged_at ? `<div class="row"><input data-f="vby" placeholder="確認者名"><input data-f="vref" placeholder="確認記録の識別番号"><input data-f="vnote" placeholder="備考（任意）"></div><div class="btns"><button class="btn pri" data-act="verify" data-fp="${esc(c.fingerprint)}">この構成の確認完了を記録</button></div>` : ''}
-  ${op && !e.purged_at ? `<div class="btns"><button class="btn pri" data-act="enable">公開（有効化）</button><button class="btn" data-act="pause">全体を一時停止</button><button class="btn" data-act="resume">再開</button><button class="btn danger" data-act="emergency_stop">緊急停止</button></div>
-  <details><summary>保持時間・削除</summary><div class="row"><input data-f="hours" type="number" min="0" value="${e.retention_hours}"><button class="btn" data-act="rprev">影響を確認</button></div><div data-f="rmsg"></div><div class="row"><input data-f="pname" placeholder="即時削除: 開催名を入力"><button class="btn danger" data-act="purge">参加者データを今すぐ削除</button></div></details>` : ''}
-  <details open><summary>参加用QRコード</summary>${localOnly ? '<div class="msg warn">公開URL（環境変数 PUBLIC_URL）が未設定です。このQRコードはこのPCからしか開けません。</div>' : ''}<div class="sub">${esc(joinUrl)}</div><div data-qr="${esc(joinUrl)}"></div>${e.purged_at ? '' : `<div class="btns"><button class="btn pri" data-qrbig="${esc(joinUrl)}" data-qrname="${esc(e.name)}">会場用に大きく表示</button></div>`}</details></div>`;
+  ${op && !e.purged_at ? `  <details><summary>保持時間・削除</summary><div class="row"><input data-f="hours" type="number" min="0" value="${e.retention_hours}"><button class="btn" data-act="rprev">影響を確認</button></div><div data-f="rmsg"></div><div class="row"><input data-f="pname" placeholder="即時削除: 開催名を入力"><button class="btn danger" data-act="purge">参加者データを今すぐ削除</button></div></details>` : ''}
+  </details></div>`;
+}
+// かんたん作成: 名前・長さ・定員だけ決めて、作成→公開→QR表示まで行う（データは固定済みの最新のもの、期間はその全体）
+function quickForm(dsl) {
+  const d = dsl.find((x) => x.status === 'locked');
+  if (!d) return '<div class="card quick"><h2 class="sec" style="margin-top:0">説明会をはじめる</h2><div class="msg warn">固定済みの市場データがありません。「くわしい設定 › 市場データ」で取り込み、固定してください。</div></div>';
+  const today = new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+  return `<div class="card quick"><h2 class="sec" style="margin-top:0">説明会をはじめる</h2>
+  <ol class="steps3"><li>下の3つを決めて「作成してQRコードを表示」を押す</li><li>表示されたQRコードを会場に映す（印刷もできます）</li><li>参加者がスマートフォンで読み取ると、すぐに始まります</li></ol>
+  <div class="row"><div><label for="q-name">説明会の名前</label><input id="q-name" maxlength="80" value="NISA説明会 ${esc(today)}"></div>
+  <div><label for="q-len">使える時間（いまから）</label><select id="q-len"><option value="2">2時間</option><option value="4">4時間</option><option value="24">1日</option><option value="168">7日</option><option value="720">30日</option></select></div>
+  <div><label for="q-max">定員（人）</label><input id="q-max" type="number" min="1" max="5000" value="50"></div></div>
+  <div class="sub">データ: ${esc(d.name)}（${esc(d.period_start)}〜${esc(d.period_end)}）／ 参加者が金額を選ばなかったときの既定は、最初100万円・毎月3万円 ／ 参加データは終了の24時間後に自動で削除</div>
+  <div class="btns"><button class="btn pri big" id="q-go" data-ds="${esc(d.id)}" data-ss="${esc(d.period_start)}" data-se="${esc(d.period_end)}">作成してQRコードを表示</button></div><div id="q-msg"></div></div>`;
 }
 function createForm(dsl) {
   const locked = dsl.filter((d) => d.status === 'locked');
@@ -73,6 +95,15 @@ function importForm() {
   return `<h3>市場データの取込</h3><div class="card"><div class="sub">JSON の形式は docs/DATA_INPUT.md を参照。取込は検証のみで、固定するまで開催には使えません。架空データで欠損を補うことはしません。</div><input type="file" id="i-file" accept=".json,application/json"><textarea id="i-text" placeholder="または JSON を貼り付け"></textarea><div class="btns"><button class="btn pri" id="i-pv">① 検証（保存しない）</button><button class="btn" id="i-go" disabled>② 取り込む（下書き）</button></div><div id="i-res"></div></div>`;
 }
 function wire() {
+  $('#q-go')?.addEventListener('click', async (ev0) => {
+    const b = ev0.currentTarget; b.disabled = true; let id = null;
+    try {
+      const now = Date.now(); const hours = Number($('#q-len').value);
+      const r = await api('POST', '/events', { name: $('#q-name').value.trim(), max_participants: Number($('#q-max').value), starts_at: new Date(now).toISOString(), ends_at: new Date(now + hours * 3600000).toISOString(), initial_cash: 1000000, monthly_deposit: 30000, dataset_id: b.dataset.ds, sim_start: b.dataset.ss, sim_end: b.dataset.se });
+      id = r.id; await api('POST', `/events/${id}/enable`);
+      await main(); document.querySelector(`[data-qrid="${id}"]`)?.click();
+    } catch (e) { b.disabled = false; if (id) await main(); toast(id ? '作成しましたが、公開できませんでした: ' + e.message : e.message, true); }
+  });
   $('#n-go')?.addEventListener('click', async () => {
     try {
       const b = { name: $('#n-name').value, max_participants: Number($('#n-max').value), starts_at: new Date($('#n-s').value).toISOString(), ends_at: new Date($('#n-e').value).toISOString(), initial_cash: Number($('#n-cash').value), monthly_deposit: Number($('#n-dep').value), dataset_id: $('#n-ds').value || null, sim_start: $('#n-ss').value || null, sim_end: $('#n-se').value || null };
@@ -100,12 +131,16 @@ function wire() {
   document.querySelectorAll('[data-lock]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('データを固定します。以後、内容は変更できません。よろしいですか？')) return; const r = await api('POST', `/datasets/${b.dataset.lock}/lock`, {}); if (r.ok) { toast('固定しました'); main(); } else toast(r.errors.join(' / '), true); }));
   document.querySelectorAll('[data-lic]').forEach((b) => b.addEventListener('click', async () => { const [d, s, st] = b.dataset.lic.split('|'); const note = st === 'confirmed' ? prompt('許諾の確認内容（契約書・規約の名称、確認日など）') : ''; if (st === 'confirmed' && !note) return; try { await api('POST', `/datasets/${d}/license`, { source_id: s, status: st, note }); main(); } catch (e) { toast(e.message, true); } }));
   document.querySelectorAll('[data-qrbig]').forEach((b) => b.addEventListener('click', () => {
-    const url = b.dataset.qrbig; let svg = '';
-    try { const q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 8, margin: 4, scalable: true }); } catch { svg = '<p>QRを生成できませんでした。</p>'; }
+    const url = b.dataset.qrbig, id = b.dataset.qrid; let svg = '';
+    try { const q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 8, margin: 4, scalable: true }); } catch { svg = '<p>QRを生成できませんでした。URLを使ってください。</p>'; }
+    document.getElementById('qrbig')?.remove();
     const o = document.createElement('div'); o.id = 'qrbig';
-    o.innerHTML = `<div class="qb-in"><div class="qb-t">${esc(b.dataset.qrname)}</div><div class="qb-h">スマートフォンのカメラで読み取ってください</div><div class="qb-q">${svg}</div><div class="qb-u">${esc(url)}</div><div class="btns noprint"><button class="btn" id="qb-print">印刷</button><button class="btn pri" id="qb-x">閉じる</button></div></div>`;
+    o.innerHTML = `<div class="qb-in"><div class="qb-t">${esc(b.dataset.qrname)}</div><div class="qb-h">スマートフォンのカメラで読み取ってください</div><div class="qb-q">${svg}</div><div class="qb-u">${esc(url)}</div><div class="qb-n noprint" id="qb-n"></div><div class="btns noprint"><button class="btn" id="qb-print">印刷</button><button class="btn pri" id="qb-x">閉じる</button></div></div>`;
     document.body.appendChild(o); document.body.classList.add('qrmode');
-    const close = () => { o.remove(); document.body.classList.remove('qrmode'); };
+    // 参加人数を5秒ごとに更新（表示している間だけ）
+    const tick = async () => { try { const r = await api('GET', '/events'); const e = r.events.find((x) => x.id === id); if (e && document.getElementById('qb-n')) document.getElementById('qb-n').textContent = `いま参加 ${e.participants} / ${e.max_participants}人（${e.status_ja}）`; } catch { /* 次の周期で再試行 */ } };
+    tick(); const timer = setInterval(tick, 5000);
+    const close = () => { clearInterval(timer); o.remove(); document.body.classList.remove('qrmode'); main(); };
     o.querySelector('#qb-x').onclick = close; o.querySelector('#qb-print').onclick = () => window.print();
   }));
   document.querySelectorAll('[data-qr]').forEach((el) => { try { const q = qrcode(0, 'M'); q.addData(el.dataset.qr); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 4, scalable: true }); el.firstChild.style.maxWidth = '220px'; el.firstChild.style.background = '#fff'; } catch { el.textContent = 'QRを生成できませんでした。URLを使ってください。'; } });
