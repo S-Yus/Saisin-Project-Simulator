@@ -4,6 +4,10 @@
 
 図は Mermaid で書いてある（GitHub ではそのまま図として表示される）。
 
+全体を1枚にまとめた図（スライドや印刷用）: [architecture.svg](architecture.svg)（拡大しても崩れない）／[architecture.png](architecture.png)（2400×1600）
+
+![アーキテクチャ図](architecture.png)
+
 ## 1. 全体の構成（確認用環境の実際の配置）
 
 ```mermaid

@@ -40,14 +40,9 @@ node scripts/loadtest.js 300 60 session    # ファイルDB・別プロセスで
 ## 構成の見取り図
 全体の配置・モジュール・画面とAPI・要求の流れ・データ構造・状態遷移・データの取込・認証の図は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（技術者向け）。
 
-```mermaid
-flowchart LR
-  P["参加者のスマートフォン"] -- HTTPS --> CF["Cloudflare"]
-  A["管理者のパソコン"] -- HTTPS --> CF
-  CF -- トンネル --> T["cloudflared（VPS）"]
-  T -- "HTTP 127.0.0.1" --> N["Node.js 単一プロセス"]
-  N --> D[("SQLite")]
-```
+![アーキテクチャ図](docs/architecture.png)
+
+図の元データは [docs/architecture.svg](docs/architecture.svg)。
 
 ## 文書
 | 文書 | 内容 |
