@@ -11,6 +11,7 @@ const call = async (method, p, body) => { const r = await fetch(base + '/admin-a
   const imp = await call('POST', '/datasets/import', bundle); if (!imp.ok) throw new Error('取込エラー: ' + imp.errors.join(' / '));
   const lk = await call('POST', `/datasets/${imp.id}/lock`, {}); if (!lk.ok) throw new Error('固定エラー: ' + lk.errors.join(' / '));
   console.log('データ固定:', imp.id, '未確定事項:', lk.pending.join(' / '));
+  if (process.argv[2] === 'data') return; // データの取込と固定だけ行い、開催回は作らない（node ops/seed-staging.js data）
   const now = Date.now(); const sim = (await call('GET', '/datasets')).datasets.find((d) => d.id === imp.id).sim_default; // 2024年1月からの2年間
   const ev = await call('POST', '/events', { name: '確認用（さいしん動作確認）', starts_at: new Date(now).toISOString(), ends_at: new Date(now + days * 86400000).toISOString(), max_participants: 50, initial_cash: 1000000, monthly_deposit: 30000, dataset_id: imp.id, sim_start: sim.start, sim_end: sim.end });
   await call('POST', `/events/${ev.id}/enable`, {});

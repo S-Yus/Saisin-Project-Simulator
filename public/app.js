@@ -94,8 +94,8 @@ const locked = () => S.me.event.status === 'paused' || S.me.account.status !== '
 const onHome = () => location.hash.startsWith('#/home') || !location.hash;
 
 // ---------- ルーター ----------
-const routes = { home: viewHome, detail: viewDetail, market: viewMarket, i: viewInstrument, orders: viewRecords, history: viewRecords, compare: viewCompare, news: viewNews, more: viewMore };
-const TAB_OF = { i: 'market', detail: 'home', orders: 'more', history: 'more', compare: 'more', news: 'home' };
+const routes = { home: viewHome, detail: viewDetail, market: viewMarket, i: viewInstrument, orders: viewRecords, history: viewRecords, compare: viewCompare, news: viewNews, more: viewMore, retry: viewRetry };
+const TAB_OF = { i: 'market', detail: 'home', orders: 'more', history: 'more', compare: 'more', news: 'home', retry: 'more' };
 async function route() {
   if (S.ended) return;
   const params = new URLSearchParams(location.search);
@@ -165,7 +165,7 @@ function wizard() {
   } else if (s === 5) body = `<h1>最初に用意する金額を決めましょう</h1><p class="sub">スタート時点で持っているお金です。</p>
     ${moneyField('wval', W.initial, INITIAL_CHOICES)}<p class="fine">0〜${yen(L.initial_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
   else body = `<h1>この条件で始めます</h1>
-    <dl class="pair"><div><dt>最初の金額</dt><dd>${yen(W.initial)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(W.monthly)}</dd></div></dl>
+    <dl class="pair"><div><dt>最初の金額</dt><dd>${yen(W.initial)}</dd></div><div><dt>毎月投資に回せる金額</dt><dd>${yen(W.monthly)}</dd></div></dl>
     <p class="sub">${periodLine(ev.data)} 毎月の金額は、途中でも「メニュー」から変えられます。</p>
     <h2 style="margin-top:22px">必ずお読みください</h2>${discHtml()}
     <label style="font-weight:600"><input type="checkbox" id="agree">上記を読み、理解しました</label>
@@ -309,7 +309,7 @@ const timeButtons = () => `<div class="timebtns"><button class="tb" id="adv-day"
 function actionArea(m) {
   const a = m.assets;
   if (m.event.status === 'paused') return '<p class="hint">一時停止中です。再開までお待ちください。</p>';
-  if (m.account.status !== 'active') return `<p class="hint">最終日（${jdate(m.account.final_date)}）に着きました。この先のデータはありません。</p><div class="btns"><a class="btn pri" href="#/orders">記録を見る</a><a class="btn" href="#/more">やり直す</a></div>`;
+  if (m.account.status !== 'active') return `<p class="hint">最終日（${jdate(m.account.final_date)}）に着きました。この先のデータはありません。</p><div class="btns"><a class="btn pri" href="#/orders">記録を見る</a><a class="btn" href="#/retry">やり直す</a></div>`;
   if (!S.auto && !m.orders.length && !a.holdings.length && !m.plans.length) return '<a class="btn pri big" id="go-market" href="#/market">投資対象をえらぶ</a>';
   return `<p class="hint">${S.auto ? '自動で進めています' : m.orders.length ? '時間を進めると、注文が成立します' : '時間を進める'}</p>${timeButtons()}`;
 }
@@ -380,7 +380,7 @@ async function viewDetail() {
     <tr><th>使えるお金 ${Q('buying')}</th><td class="n">${yen(a.available)}</td></tr><tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}
     <tr><th>入金した合計</th><td class="n">${yen(a.deposits)}</td></tr><tr><th>損益（税引前 ${Q('pretax')}）</th><td class="n">${plLabel(a.pnl)}</td></tr></table>
     ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(shortName(r.name))} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
-    <p class="fine">${m.next_deposit_date ? `次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}　` : `毎月入ってくる金額 ${yen(m.event.monthly_deposit)}　`}${m.account.status === 'active' ? '<a href="#/more">金額を変える ›</a>' : ''}</p></section>
+    <p class="fine">${m.next_deposit_date ? `次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}　` : `毎月投資に回せる金額 ${yen(m.event.monthly_deposit)}　`}${m.account.status === 'active' ? '<a href="#/more">金額を変える ›</a>' : ''}</p></section>
   <section class="blk"><h2>資産配分</h2>${allocHtml(m.allocation)}</section>
   <section class="blk"><h2>これまでのできごと</h2>${newsList(m.news.slice(0, 3))}${m.news.length > 3 ? '<p><a href="#/news">すべて見る</a></p>' : ''}</section>`;
 }
@@ -637,7 +637,7 @@ async function viewCompare() {
   const c = await api('GET', '/api/compare');
   $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/orders">‹ 記録へ戻る</a></p><h1>試行を比べる</h1><p class="sub">${esc(c.note)}</p>
   <p class="fine"><b>${jdate(c.common_date)}</b> 時点の値を並べています。</p>
-  ${c.rows.length < 2 ? '<div class="msg">比べるには、「メニュー」からやり直して2回目を進めてください。</div>' : ''}
+  ${c.rows.length < 2 ? '<div class="msg">比べるには、<a href="#/retry">やり直して</a>2回目を進めてください。</div>' : ''}
   <table><tr><th>試行</th><th class="n">総資産</th><th class="n">入金した合計</th><th class="n">損益（税引前）</th></tr>${c.rows.map((r) => `<tr><td>${r.attempt}回目${r.attempt === 1 ? '（初回）' : '（再試行）'}<br><span class="fine">最初 ${yen(r.conditions.initial_cash)}・毎月 ${yen(r.conditions.monthly_deposit)}${r.conditions.monthly_changed ? '（途中で変更）' : ''}</span></td><td class="n">${yen(r.at_common?.total)}</td><td class="n">${yen(r.at_common?.deposits)}</td><td class="n">${r.at_common ? plLabel(r.at_common.total - r.at_common.deposits) : '-'}</td></tr>`).join('')}</table>
   <section class="blk"><h2>最新の試行の総資産の動き</h2>${chart(c.rows[c.rows.length - 1].series.map((s) => [s.date, s.total]), { label: '最新の試行の総資産' })}</section>
   <section class="blk"><h2>各試行の内容</h2><div class="rows">${c.rows.map((r) => `<div class="row" style="display:block"><div class="nm">${r.attempt}回目</div><div class="fine">進めた日付 ${jdate(r.sim_date)} ／ 成立 ${r.trades}件 ／ 手数料等の合計 ${yen(r.fees)}</div><div class="fine">保有: ${r.holdings.map((x) => esc(x.name) + ' ' + yen(x.value)).join('、') || 'なし'}</div></div>`).join('')}</div></section>`;
@@ -651,17 +651,13 @@ async function viewMore() {
   const L = m.event.funds_limits;
   $('#view').innerHTML = `<h1>メニュー</h1>
   <div class="rows"><a class="row" href="#/orders"><div class="grow nm">記録（注文・お金の動き・比較）</div></a><a class="row" href="#/detail"><div class="grow nm">くわしく（内訳・資産配分・できごと）</div></a></div>
-  <section class="blk"><h2>いまの条件</h2><dl class="pair" style="border-top:0;margin-top:0"><div><dt>最初の金額</dt><dd>${yen(m.event.initial_cash)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(m.event.monthly_deposit)}</dd>${m.account.monthly_changed ? '<div class="fine">途中で変更</div>' : ''}</div></dl>
-    ${m.account.status === 'active' ? `<label for="mo-val">毎月入ってくる金額を変える</label><div class="yenin"><input id="mo-val" inputmode="numeric" autocomplete="off" value="${num(m.event.monthly_deposit)}"></div>
+  <section class="blk"><h2>いまの条件</h2><dl class="pair" style="border-top:0;margin-top:0"><div><dt>最初の金額</dt><dd>${yen(m.event.initial_cash)}</dd></div><div><dt>毎月投資に回せる金額</dt><dd>${yen(m.event.monthly_deposit)}</dd>${m.account.monthly_changed ? '<div class="fine">途中で変更</div>' : ''}</div></dl>
+    ${m.account.status === 'active' ? `<label for="mo-val">毎月投資に回せる金額を変える</label><div class="yenin"><input id="mo-val" inputmode="numeric" autocomplete="off" value="${num(m.event.monthly_deposit)}"></div>
     <p class="fine">やり直さずに、このまま続けて変えられます。次の月の入金から新しい金額になります（0〜${yen(L.monthly_max)}、${yen(L.step)}単位）。商品ごとの積立の金額は、その商品の画面の「積立」から変えられます。</p>
     <div id="momsg"></div><div class="stack"><button class="btn" id="mo-go" ${m.event.status === 'paused' ? 'disabled' : ''}>毎月の金額を変える</button></div>` : ''}
     ${prof && (prof.grade || prof.income != null) ? `<p class="fine">はじめの回答（この端末の中だけに保存）: ${[prof.grade, prof.income != null ? `収入 ${yen(prof.income)}` : null, prof.expense != null ? `支出 ${yen(prof.expense)}` : null].filter(Boolean).map(esc).join(' ／ ')}</p>` : ''}
     <p class="fine">説明会の終了予定（実際の時刻）: ${esc(end)}。${Object.values(m.event.provisional || {}).some(Boolean) ? '一部の設定は仮設定です。' : ''}</p></section>
-  <section class="blk"><h2>やり直す</h2><p class="sub">いまの結果は保存され、閲覧専用で残ります。${m.account.attempt + 1}回目を最初の日付から始めます。</p>
-    <label for="r-init">最初の金額</label><div class="yenin"><input id="r-init" inputmode="numeric" value="${num(m.event.initial_cash)}"></div>
-    <label for="r-mon">毎月入ってくる金額</label><div class="yenin"><input id="r-mon" inputmode="numeric" value="${num(m.event.monthly_deposit)}"></div>
-    <p class="fine">金額を変えなければ、同じ条件でのやり直しになります。最初 0〜${yen(L.initial_max)}、毎月 0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>
-    <div id="rsmsg"></div><div class="stack"><button class="btn" id="restart" ${m.event.status === 'paused' ? 'disabled' : ''}>結果を保存してやり直す</button></div></section>
+  <section class="blk"><h2>やり直す</h2><p class="sub">いまの結果を残して、金額を決め直し、最初の日付からもう一度始められます。</p><div class="stack"><a class="btn" href="#/retry">やり直しの画面へ</a></div></section>
   <section class="blk"><h2>ガイド</h2><p class="sub">押す場所を、画面の上に表示します。</p><div class="stack"><button class="btn quiet" id="reguide">ガイドをもう一度表示する</button></div></section>
   <section class="blk" style="padding-bottom:0"><h2>このシミュレーターについて</h2>
     <details><summary>ご利用上の注意</summary><div class="in">${discHtml()}</div></details>
@@ -678,13 +674,23 @@ async function viewMore() {
     catch (e) { b.disabled = false; if (!e.ended) msg(e.message + (e.unknown ? '（結果が未確認です。画面を更新して確認してください）' : '')); }
   });
   $('#reguide').addEventListener('click', () => { ls.del(GUIDE_KEY); S.guideForce = true; location.hash = '#/home'; });
+}
+// やり直し: 金額を決め直して、最初の日付からもう一度（結果の画面とメニューから来る）
+async function viewRetry() {
+  const m = S.me; const L = m.event.funds_limits; const fin = m.account.status !== 'active';
+  $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="${fin ? '#/home' : '#/more'}">‹ ${fin ? '結果へ戻る' : 'メニューへ戻る'}</a></p><h1>やり直す</h1>
+  <p class="sub">${m.account.attempt + 1}回目を、最初の日付（${jdate(m.event.period.start)}）から始めます。いまの結果は消えず、「記録」でいつでも見られます。</p>
+  <label for="r-init">最初の金額</label><div class="yenin"><input id="r-init" inputmode="numeric" autocomplete="off" value="${num(m.event.initial_cash)}"></div>
+  <label for="r-mon">毎月投資に回せる金額</label><div class="yenin"><input id="r-mon" inputmode="numeric" autocomplete="off" value="${num(m.event.monthly_deposit)}"></div>
+  <div id="rsmsg"></div><div class="stack"><button class="btn pri big" id="restart" ${m.event.status === 'paused' ? 'disabled' : ''}>この条件でやり直す</button></div>
+  <p class="fine" style="margin-top:12px">変えなければ、前回と同じ金額で始まります。最初 0〜${yen(L.initial_max)}、毎月 0〜${yen(L.monthly_max)}、${yen(L.step)}単位。</p>`;
   $('#restart').addEventListener('click', async () => {
     const rd = (id) => { const raw = $('#' + id).value.replace(/[,\s円]/g, ''); return /^\d+$/.test(raw) ? Number(raw) : NaN; };
-    const ic = rd('r-init'), md = rd('r-mon'); const msg = (t) => { $('#rsmsg').innerHTML = `<div class="msg err">⚠ ${esc(t)}</div>`; };
+    const ic = rd('r-init'), md = rd('r-mon'); const msg = (x) => { $('#rsmsg').innerHTML = `<div class="msg err">⚠ ${esc(x)}</div>`; };
     if (Number.isNaN(ic) || Number.isNaN(md)) return msg('金額は半角の数字で入力してください');
-    const same = ic === m.event.initial_cash && md === m.event.monthly_deposit;
-    if (!confirm(`結果を保存して、最初からやり直します（${same ? '同じ条件' : `最初 ${yen(ic)}・毎月 ${yen(md)}`}）。よろしいですか？`)) return;
-    try { const r = await doPost('/api/restart', same ? {} : { initial_cash: ic, monthly_deposit: md }); S.stop = null; S.last = []; toast(r.message); location.hash = '#/home'; route(); } catch (e) { if (!e.ended) msg(e.message + (e.unknown ? '（結果が未確認です。記録で確認してください）' : '')); }
+    const same = ic === m.event.initial_cash && md === m.event.monthly_deposit; const b = $('#restart'); b.disabled = true;
+    try { const r = await doPost('/api/restart', same ? {} : { initial_cash: ic, monthly_deposit: md }); S.stop = null; S.last = []; ord = null; toast(r.message); location.hash = '#/home'; }
+    catch (e) { b.disabled = false; if (!e.ended) msg(e.message + (e.unknown ? '（結果が未確認です。記録で確認してください）' : '')); }
   });
 }
 
