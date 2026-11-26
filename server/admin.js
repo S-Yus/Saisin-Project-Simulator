@@ -132,9 +132,14 @@ function listEvents(db, nowMs) {
   });
 }
 
+// 体験する期間の既定: 2024年1月からの2年間。データの期間に収まらないときは、データの全期間
+function simDefault(d) {
+  const s = d.period_start > cfg.DEFAULT_SIM.start ? d.period_start : cfg.DEFAULT_SIM.start, e = d.period_end < cfg.DEFAULT_SIM.end ? d.period_end : cfg.DEFAULT_SIM.end;
+  return s < e ? { start: s, end: e } : { start: d.period_start, end: d.period_end };
+}
 function listDatasets(db) {
   return db.prepare('SELECT id,name,kind,status,period_start,period_end,content_hash,created_at,locked_at,broker_basis_json,validation_json,version_label,source_checksum,counts_json FROM datasets ORDER BY created_at DESC').all().map((d) => ({
-    ...d, broker_basis: JSON.parse(d.broker_basis_json), validation: JSON.parse(d.validation_json), counts: JSON.parse(d.counts_json || '{}'),
+    ...d, sim_default: simDefault(d), broker_basis: JSON.parse(d.broker_basis_json), validation: JSON.parse(d.validation_json), counts: JSON.parse(d.counts_json || '{}'),
     sources: db.prepare('SELECT source_id,name,url,retrieved_at,license_status,license_note,adjustment FROM dataset_sources WHERE dataset_id=?').all(d.id),
     instruments: db.prepare('SELECT id,type,name,category FROM instruments WHERE dataset_id=?').all(d.id).length,
   }));
@@ -207,4 +212,4 @@ function purgeStatus(db) {
   };
 }
 
-module.exports = { previewDataset, createEvent, updateEvent, recordVerification, setState, retentionPreview, setRetention, listEvents, listDatasets, setLicense, importDataset, lockDataset, purgeEvent, runPurgeJob, purgeNow, deleteEvent, purgeStatus, audit };
+module.exports = { previewDataset, createEvent, updateEvent, recordVerification, setState, retentionPreview, setRetention, listEvents, listDatasets, setLicense, importDataset, lockDataset, purgeEvent, runPurgeJob, purgeNow, deleteEvent, simDefault, purgeStatus, audit };

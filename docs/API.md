@@ -57,6 +57,12 @@
 | `POST /api/plans/{id}` | 積立の変更。`{request_id, action: amount/pause/resume/cancel, amount?}` |
 | `POST /api/restart` `{request_id, initial_cash?, monthly_deposit?}` | 結果を保存してやり直す（10回まで）。金額を省略すれば同じ条件、指定すれば条件を変える |
 
+### 0.11.0 の追加
+- `POST /api/monthly` `{request_id, expected_sim_date, monthly_deposit}` … 毎月入ってくる金額を途中で変える（次の月初の入金から）。範囲外・同額・進行できない口座は 422。
+- `GET /api/me` の `account.monthly_changed`（途中で変えた回数）、`GET /api/compare` の `rows[].conditions.monthly_changed`。
+- `GET /admin-api/datasets` の `datasets[].sim_default {start, end}`（体験する期間の既定。2024-01-01〜2025-12-31 をデータの期間に収めたもの）。
+- 参加者画面のアドレス `#/i/<商品ID>/sell` は、その商品の「売る」入力を開いた状態で表示する。
+
 ### 管理APIの認証（0.10.0）
 - `POST /admin-api/login` `{id, password}` → Cookie `nisa_admin`（HttpOnly）を発行し、`{ok, role, user}` を返す。誤りは 401（IDの有無によらず同じ文言）、制限中は 429。
 - `POST /admin-api/logout`、`POST /admin-api/password` `{current, new}`（ログイン中のみ。規則に合わなければ 422）。

@@ -85,6 +85,7 @@ const api = (env) => {
     advance: (tok, mode, b = {}) => S.opAdvance(env.db, { request_id: rid(), mode, ...b })(t(), tok),
     plan: (tok, b) => S.opPlanCreate(env.db, { request_id: rid(), ...b })(t(), tok),
     planUpd: (tok, id, b) => S.opPlanUpdate(env.db, { request_id: rid(), ...b }, id)(t(), tok),
+    monthly: (tok, v) => S.opMonthly(env.db, { request_id: rid(), monthly_deposit: v })(t(), tok),
     restart: (tok) => S.opRestart(env.db, { request_id: rid() })(t(), tok),
     history: (tok, a) => S.history(env.db, S.auth(env.db, tok, t(), { write: false }), a),
     compare: (tok) => S.compare(env.db, S.auth(env.db, tok, t(), { write: false })),

@@ -102,6 +102,7 @@ const MIGRATIONS = [
   ['receivables', 'qty', 'INTEGER'],
   ['events', 'created_by', 'TEXT'], // 作成した管理アカウントのID（トークンで作った場合は NULL）
   ['news', 'explain', 'TEXT'], ['news', 'views_json', 'TEXT'], // ニュースの解説と「考え方の例」（任意）
+  ['accounts', 'monthly_changed', 'INTEGER'], // 途中で毎月の金額を変えた回数（NULL は0）
   ['accounts', 'initial_cash', 'INTEGER'], ['accounts', 'monthly_deposit', 'INTEGER'], // 参加者が選んだ資金条件（試行ごと）。NULL は開催回の既定値
   ['actions', 'record_date', 'TEXT'], ['actions', 'fraction_price_milli', 'INTEGER'], ['actions', 'fraction_pay_date', 'TEXT'],
   ['datasets', 'version_label', 'TEXT'], ['datasets', 'source_checksum', 'TEXT'], ['datasets', 'counts_json', "TEXT NOT NULL DEFAULT '{}'"],

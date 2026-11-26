@@ -500,3 +500,26 @@ test('説明会の削除: 参加者データごと消え、一覧から無くな
     assert.equal(cnt('datasets'), 1, '市場データは消えない');
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+test('毎月の金額を途中で変える: 次の月初の入金から新しい額になり、すでに入金した分は変わらない。範囲外・同額・終了後は拒否。比較に「途中で変更」が出る', () => {
+  const env = setup(bundle36()); const a = api(env); const tok = a.join();
+  a.advance(tok, 'month'); assert.equal(a.me(tok).assets.deposits, 1030000);
+  const r = a.monthly(tok, 50000); assert.equal(r.monthly_deposit, 50000);
+  let m = a.me(tok); assert.equal(m.event.monthly_deposit, 50000); assert.equal(m.account.monthly_changed, 1); assert.equal(m.assets.deposits, 1030000, '変更した時点では入金は増えない');
+  a.advance(tok, 'month'); m = a.me(tok); assert.equal(m.assets.deposits, 1080000); assert.equal(m.assets.cash, 1080000); checkInvariants(env, tok);
+  a.monthly(tok, 0); a.advance(tok, 'month'); m = a.me(tok); assert.equal(m.assets.deposits, 1080000, '0円にすると入金が止まる'); assert.equal(m.next_deposit_date, null);
+  for (const bad of [-1000, 1500, 301000, '5000', null]) assert.throws(() => a.monthly(tok, bad), (e) => e.status === 422, String(bad));
+  assert.throws(() => a.monthly(tok, 0), (e) => e.status === 422, '同額');
+  const c = a.compare(tok); assert.equal(c.rows[0].conditions.monthly_changed, 2);
+  a.restart(tok); assert.equal(a.me(tok).event.monthly_deposit, 0, 'やり直しは直前の条件を引き継ぐ'); assert.equal(a.me(tok).account.monthly_changed, 0);
+  assert.equal(a.compare(tok).same_conditions, false, '途中で変えた試行があれば「同じ条件」と表示しない');
+  // 最終日に着いた口座では変更できない
+  const t2 = a.join(); for (let i = 0; i < 300 && a.me(t2).account.status === 'active'; i++) a.advance(t2, 'month'); assert.notEqual(a.me(t2).account.status, 'active'); assert.throws(() => a.monthly(t2, 10000), (e) => e.status === 422);
+});
+test('体験する期間の既定: 2024年1月からの2年間（データの期間に収まらないときは全期間）', () => {
+  const A2 = require('../server/admin');
+  assert.deepEqual(A2.simDefault({ period_start: '2023-11-01', period_end: '2026-10-31' }), { start: '2024-01-01', end: '2025-12-31' });
+  assert.deepEqual(A2.simDefault({ period_start: '2024-06-01', period_end: '2025-03-31' }), { start: '2024-06-01', end: '2025-03-31' });
+  assert.deepEqual(A2.simDefault({ period_start: '2021-01-01', period_end: '2023-12-31' }), { start: '2021-01-01', end: '2023-12-31' });
+  const env = setup(bundle36()); assert.ok(A2.listDatasets(env.db)[0].sim_default.start);
+});

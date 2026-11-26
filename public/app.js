@@ -63,7 +63,7 @@ function showEnded(msg) {
 }
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; $('#toasts').append(d); setTimeout(() => d.remove(), 5000); }
 $('#dlg').addEventListener('close', () => $('#dlg').classList.remove('nc'));
-function modal(html) { $('#dlgbody').innerHTML = html; const d = $('#dlg'); if (!d.open) d.showModal(); }
+function modal(html) { const b = $('#dlgbody'); b.innerHTML = html; const d = $('#dlg'); if (!d.open) d.showModal(); b.focus({ preventScroll: true }); d.scrollTop = 0; }
 document.addEventListener('click', (e) => {
   const q = e.target.closest('[data-term]'); if (q) { e.preventDefault(); const t = TERMS[q.dataset.term]; modal(`<h3 style="margin-top:0">${esc(t[0])}</h3><p>${esc(t[1])}</p>`); }
 });
@@ -99,14 +99,14 @@ const TAB_OF = { i: 'market', detail: 'home', orders: 'more', history: 'more', c
 async function route() {
   if (S.ended) return;
   const params = new URLSearchParams(location.search);
-  const h = location.hash.replace(/^#\/?/, '') || ''; const [name, arg] = h.split('/');
+  const h = location.hash.replace(/^#\/?/, '') || ''; const [name, arg, sub] = h.split('/');
   if (!store.get()) return viewStart(params.get('code'));
   try {
     document.body.classList.remove('sheet-open');
     await refresh();
     const tab = TAB_OF[name] || name || 'home';
     document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.t === tab));
-    await (routes[name] || viewHome)(decodeURIComponent(arg || ''), name);
+    await (routes[name] || viewHome)(decodeURIComponent(arg || ''), name, sub);
     window.scrollTo(0, 0); $('#view').focus({ preventScroll: true }); coachSoon();
   } catch (e) { if (!e.ended) $('#view').innerHTML = `<div class="msg err">${esc(e.message)}${e.unknown ? '<br>通信を確認して、画面を更新してください。' : ''}</div>`; }
 }
@@ -166,7 +166,7 @@ function wizard() {
     ${moneyField('wval', W.initial, INITIAL_CHOICES)}<p class="fine">0〜${yen(L.initial_max)}、${yen(L.step)}単位。</p>${foot('次へ')}`;
   else body = `<h1>この条件で始めます</h1>
     <dl class="pair"><div><dt>最初の金額</dt><dd>${yen(W.initial)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(W.monthly)}</dd></div></dl>
-    <p class="sub">${periodLine(ev.data)} 金額は、あとで「メニュー」から変えてやり直せます。</p>
+    <p class="sub">${periodLine(ev.data)} 毎月の金額は、途中でも「メニュー」から変えられます。</p>
     <h2 style="margin-top:22px">必ずお読みください</h2>${discHtml()}
     <label style="font-weight:600"><input type="checkbox" id="agree">上記を読み、理解しました</label>
     ${foot('この条件で始める', { disabled: true })}`;
@@ -380,7 +380,7 @@ async function viewDetail() {
     <tr><th>使えるお金 ${Q('buying')}</th><td class="n">${yen(a.available)}</td></tr><tr><th>投資対象の評価額</th><td class="n">${yen(a.holdings_value)}</td></tr>${a.receivable_sale ? `<tr><th>受渡を待っている売却代金</th><td class="n">${yen(a.receivable_sale)}</td></tr>` : ''}${a.receivable_dividend ? `<tr><th>未収の配当・分配金等</th><td class="n">${yen(a.receivable_dividend)}</td></tr>` : ''}
     <tr><th>入金した合計</th><td class="n">${yen(a.deposits)}</td></tr><tr><th>損益（税引前 ${Q('pretax')}）</th><td class="n">${plLabel(a.pnl)}</td></tr></table>
     ${m.receivables.length ? `<p class="fine"><b>これからの受渡・入金</b>${m.receivables.map((r) => `<br>・${esc(shortName(r.name))} ${yen(r.amount)} ${({ sale: '売却代金の受取', purchase: '買付代金の支払', dividend: '配当・分配金の入金（税引前）', split_fraction: '端数株代金の入金' })[r.kind]} ${r.due_date === '9999-12-31' ? '（期間外）' : jdate(r.due_date)}`).join('')}</p>` : ''}
-    ${m.next_deposit_date ? `<p class="fine">次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}</p>` : ''}</section>
+    <p class="fine">${m.next_deposit_date ? `次の入金 ${yen(m.event.monthly_deposit)}・${jdate(m.next_deposit_date)}　` : `毎月入ってくる金額 ${yen(m.event.monthly_deposit)}　`}${m.account.status === 'active' ? '<a href="#/more">金額を変える ›</a>' : ''}</p></section>
   <section class="blk"><h2>資産配分</h2>${allocHtml(m.allocation)}</section>
   <section class="blk"><h2>これまでのできごと</h2>${newsList(m.news.slice(0, 3))}${m.news.length > 3 ? '<p><a href="#/news">すべて見る</a></p>' : ''}</section>`;
 }
@@ -426,7 +426,7 @@ async function advance(mode) {
     S.playing = onHome() && !reduceMotion(); // 演出が終わるまで、ヘッダーの日付を先に進めない
     await refresh(); if (onHome()) { await viewHome(); await playTime(from); } else S.playing = false;
     if (r.events.some((e) => e.type === 'order_filled')) buzz(30);
-    if (onHome()) newsCard(S.me.news.filter((n) => n.published_date > from).reverse());
+    if (onHome()) newsCard(S.me.news.filter((n) => n.published_date > from || from === S.me.event.period.start).reverse());
     return r;
   } catch (e) {
     S.playing = false;
@@ -440,22 +440,31 @@ function startAuto() { S.auto = true; S.stop = null; viewHome(); const tick = as
 function stopAuto(rerender) { S.auto = false; clearTimeout(S.autoTimer); if (rerender) viewHome(); }
 
 // ---------- えらぶ ----------
-let marketState = { q: '', cat: '' };
+let marketState = { q: '', cat: '', side: 'buy' };
 async function viewMarket() {
   const r = await api('GET', `/api/instruments?q=${encodeURIComponent(marketState.q)}&category=${encodeURIComponent(marketState.cat)}`);
+  const sell = marketState.side === 'sell'; const seg = `<div class="seg mseg" role="group" aria-label="買う・売るの切り替え"><button data-side="buy" class="${sell ? '' : 'on'}">買う</button><button data-side="sell" class="${sell ? 'on' : ''}">売る</button></div>`;
+  const bindSide = () => document.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => { marketState.side = b.dataset.side; viewMarket(); }));
+  if (sell) {
+    const all = marketState.q || marketState.cat ? (await api('GET', '/api/instruments?q=&category=')).items : r.items; const held = all.filter((i) => i.qty > 0);
+    $('#view').innerHTML = `<h1 class="vh">売る</h1>${seg}
+    ${held.length ? `<p class="sub" style="margin:12px 0 0">持っているものから、売るものを選びます。</p><div class="rows compact">${held.map((i) => `<a class="row" href="#/i/${esc(i.id)}/sell" title="${esc(i.name)}">${seal(i.category)}<div class="grow"><div class="nm one">${esc(shortName(i.name))}</div><div class="fine one">${esc(i.category)} ・ ${num(i.qty)}${i.type === 'fund' ? '口' : '株'}</div></div><div class="r"><div><b>${yen(i.value)}</b></div><div class="fine">いまの評価額</div></div></a>`).join('')}</div><p class="fine" style="margin-top:8px">買ってから受渡日までの分は、まだ売れません。売った代金は、受渡日に使えるお金になります。</p>` : '<p class="sub" style="padding:16px 0">まだ持っているものがありません。「買う」から選んで買うと、ここに並びます。</p>'}`;
+    return bindSide();
+  }
   const many = r.items.length > 8 || marketState.cat || marketState.q; // 数が少ないうちは、絞り込みや検索を出さない
-  $('#view').innerHTML = `<h1 class="vh">えらぶ</h1>
+  $('#view').innerHTML = `<h1 class="vh">えらぶ</h1>${seg}
   ${many ? `<div class="chips" role="group" aria-label="分類">${['', ...r.categories].map((c) => `<button class="chip ${marketState.cat === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c || 'すべて')}</button>`).join('')}</div><input id="q" type="search" aria-label="名前で検索" value="${esc(marketState.q)}" placeholder="名前で検索">` : ''}
   <div class="rows compact">${r.items.length ? r.items.map((i) => `<a class="row" href="#/i/${esc(i.id)}" title="${esc(i.name)}">${seal(i.category)}<div class="grow"><div class="nm one">${esc(shortName(i.name))}</div><div class="fine one">${esc(i.category)}${i.qty ? ` ・ <b class="pos">保有 ${yen(i.value)}</b>` : ''}</div></div><div class="r">${spark(i.spark)}<div class="fine">${milli(i.price_milli)}円</div></div></a>`).join('') : '<p class="sub" style="padding:16px 0">該当する投資対象がありません。</p>'}</div>
   <p class="fine" style="margin-top:8px">グラフは直近30営業日。並びは登録順です（特定の商品をすすめるものではありません）。</p>`;
   let tm; const qi = $('#q'); if (qi && marketState.focus) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); marketState.focus = false; }
   qi?.addEventListener('input', (e) => { clearTimeout(tm); tm = setTimeout(() => { marketState.q = e.target.value; marketState.focus = true; viewMarket(); }, 400); });
   document.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { marketState.cat = b.dataset.cat; viewMarket(); }));
+  bindSide();
 }
 
 // ---------- 商品の詳細と注文 ----------
 let ord = null;
-async function viewInstrument(id) {
+async function viewInstrument(id, _name, sub) {
   const d = await api('GET', '/api/instruments/' + encodeURIComponent(id)); const isFund = d.type === 'fund'; const t = d.terms; const u = isFund ? '口' : '株';
   const chg = d.prev_close_milli ? d.price_milli - d.prev_close_milli : 0;
   $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/market">‹ えらぶへ戻る</a></p>
@@ -476,7 +485,9 @@ async function viewInstrument(id) {
   document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => openOrder(d, b.dataset.mode)));
   $('#sheet-x').addEventListener('click', () => { ord = null; $('#sheet').hidden = true; document.body.classList.remove('sheet-open'); document.querySelectorAll('[data-mode]').forEach((b) => b.classList.remove('on')); coachSoon(); });
   bindCancel(() => viewInstrument(id));
-  if (ord && ord.id === id && ord.mode) openOrder(d, ord.mode, true);
+  const cont = ord && ord.id === id && ord.mode && !(sub === 'sell' && (ord.mode !== 'sell' || ord.step === 'result')); // 入力の途中なら続きから
+  if (cont) openOrder(d, ord.mode, true);
+  else if (sub === 'sell' && d.holding) openOrder(d, 'sell'); // 「売る」の一覧から来たときは、売る入力を開いておく
 }
 function bindCancel(after) {
   document.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
@@ -627,7 +638,7 @@ async function viewCompare() {
   $('#view').innerHTML = `<p style="margin:10px 0 0"><a href="#/orders">‹ 記録へ戻る</a></p><h1>試行を比べる</h1><p class="sub">${esc(c.note)}</p>
   <p class="fine"><b>${jdate(c.common_date)}</b> 時点の値を並べています。</p>
   ${c.rows.length < 2 ? '<div class="msg">比べるには、「メニュー」からやり直して2回目を進めてください。</div>' : ''}
-  <table><tr><th>試行</th><th class="n">総資産</th><th class="n">入金した合計</th><th class="n">損益（税引前）</th></tr>${c.rows.map((r) => `<tr><td>${r.attempt}回目${r.attempt === 1 ? '（初回）' : '（再試行）'}<br><span class="fine">最初 ${yen(r.conditions.initial_cash)}・毎月 ${yen(r.conditions.monthly_deposit)}</span></td><td class="n">${yen(r.at_common?.total)}</td><td class="n">${yen(r.at_common?.deposits)}</td><td class="n">${r.at_common ? plLabel(r.at_common.total - r.at_common.deposits) : '-'}</td></tr>`).join('')}</table>
+  <table><tr><th>試行</th><th class="n">総資産</th><th class="n">入金した合計</th><th class="n">損益（税引前）</th></tr>${c.rows.map((r) => `<tr><td>${r.attempt}回目${r.attempt === 1 ? '（初回）' : '（再試行）'}<br><span class="fine">最初 ${yen(r.conditions.initial_cash)}・毎月 ${yen(r.conditions.monthly_deposit)}${r.conditions.monthly_changed ? '（途中で変更）' : ''}</span></td><td class="n">${yen(r.at_common?.total)}</td><td class="n">${yen(r.at_common?.deposits)}</td><td class="n">${r.at_common ? plLabel(r.at_common.total - r.at_common.deposits) : '-'}</td></tr>`).join('')}</table>
   <section class="blk"><h2>最新の試行の総資産の動き</h2>${chart(c.rows[c.rows.length - 1].series.map((s) => [s.date, s.total]), { label: '最新の試行の総資産' })}</section>
   <section class="blk"><h2>各試行の内容</h2><div class="rows">${c.rows.map((r) => `<div class="row" style="display:block"><div class="nm">${r.attempt}回目</div><div class="fine">進めた日付 ${jdate(r.sim_date)} ／ 成立 ${r.trades}件 ／ 手数料等の合計 ${yen(r.fees)}</div><div class="fine">保有: ${r.holdings.map((x) => esc(x.name) + ' ' + yen(x.value)).join('、') || 'なし'}</div></div>`).join('')}</div></section>`;
 }
@@ -640,7 +651,10 @@ async function viewMore() {
   const L = m.event.funds_limits;
   $('#view').innerHTML = `<h1>メニュー</h1>
   <div class="rows"><a class="row" href="#/orders"><div class="grow nm">記録（注文・お金の動き・比較）</div></a><a class="row" href="#/detail"><div class="grow nm">くわしく（内訳・資産配分・できごと）</div></a></div>
-  <section class="blk"><h2>いまの条件</h2><dl class="pair" style="border-top:0;margin-top:0"><div><dt>最初の金額</dt><dd>${yen(m.event.initial_cash)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(m.event.monthly_deposit)}</dd></div></dl>
+  <section class="blk"><h2>いまの条件</h2><dl class="pair" style="border-top:0;margin-top:0"><div><dt>最初の金額</dt><dd>${yen(m.event.initial_cash)}</dd></div><div><dt>毎月入ってくる金額</dt><dd>${yen(m.event.monthly_deposit)}</dd>${m.account.monthly_changed ? '<div class="fine">途中で変更</div>' : ''}</div></dl>
+    ${m.account.status === 'active' ? `<label for="mo-val">毎月入ってくる金額を変える</label><div class="yenin"><input id="mo-val" inputmode="numeric" autocomplete="off" value="${num(m.event.monthly_deposit)}"></div>
+    <p class="fine">やり直さずに、このまま続けて変えられます。次の月の入金から新しい金額になります（0〜${yen(L.monthly_max)}、${yen(L.step)}単位）。商品ごとの積立の金額は、その商品の画面の「積立」から変えられます。</p>
+    <div id="momsg"></div><div class="stack"><button class="btn" id="mo-go" ${m.event.status === 'paused' ? 'disabled' : ''}>毎月の金額を変える</button></div>` : ''}
     ${prof && (prof.grade || prof.income != null) ? `<p class="fine">はじめの回答（この端末の中だけに保存）: ${[prof.grade, prof.income != null ? `収入 ${yen(prof.income)}` : null, prof.expense != null ? `支出 ${yen(prof.expense)}` : null].filter(Boolean).map(esc).join(' ／ ')}</p>` : ''}
     <p class="fine">説明会の終了予定（実際の時刻）: ${esc(end)}。${Object.values(m.event.provisional || {}).some(Boolean) ? '一部の設定は仮設定です。' : ''}</p></section>
   <section class="blk"><h2>やり直す</h2><p class="sub">いまの結果は保存され、閲覧専用で残ります。${m.account.attempt + 1}回目を最初の日付から始めます。</p>
@@ -656,6 +670,13 @@ async function viewMore() {
     <details><summary>用語</summary><div class="in">${Object.keys(TERMS).map((k) => `<p><b>${esc(TERMS[k][0])}</b><br><span class="sub">${esc(TERMS[k][1])}</span></p>`).join('')}</div></details>
     <details><summary>データの扱い</summary><div class="in"><p class="sub">氏名・メールアドレスなどは取得しません。はじめの質問への回答はこの端末の中だけで使い、サーバーには2つの金額だけを送ります。参加データは説明会終了の ${m.event.retention_hours} 時間後に自動削除されます。端末に残った画面表示（スクリーンショット等）は回収できません。</p><p class="fine">版: アプリ ${esc(m.event.app_version)} ／ 計算仕様 ${esc(m.event.calc_spec_version)}</p></div></details>
   </section>`;
+  $('#mo-go')?.addEventListener('click', async () => {
+    const raw = $('#mo-val').value.replace(/[,\s円]/g, ''); const msg = (t) => { $('#momsg').innerHTML = `<div class="msg err">⚠ ${esc(t)}</div>`; };
+    if (!/^\d+$/.test(raw)) return msg('金額は半角の数字で入力してください');
+    const b = $('#mo-go'); b.disabled = true;
+    try { const r = await doPost('/api/monthly', { monthly_deposit: Number(raw) }); toast(r.message); await refresh(); await viewMore(); }
+    catch (e) { b.disabled = false; if (!e.ended) msg(e.message + (e.unknown ? '（結果が未確認です。画面を更新して確認してください）' : '')); }
+  });
   $('#reguide').addEventListener('click', () => { ls.del(GUIDE_KEY); S.guideForce = true; location.hash = '#/home'; });
   $('#restart').addEventListener('click', async () => {
     const rd = (id) => { const raw = $('#' + id).value.replace(/[,\s円]/g, ''); return /^\d+$/.test(raw) ? Number(raw) : NaN; };

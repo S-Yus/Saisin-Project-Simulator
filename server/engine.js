@@ -94,6 +94,13 @@ function createAccount(db, participantId, ev, ds, attempt, now, funds) {
   return acc;
 }
 
+// 毎月の追加資金の額を途中で変える。すでに入金した分は変わらず、次の月初の入金から新しい額になる
+function setMonthly(db, acc, amount) {
+  if (acc.status !== 'active') return { ok: false, error: 'この口座では変更できません（終了または保存済み）' };
+  db.prepare('UPDATE accounts SET monthly_deposit=?, monthly_changed=COALESCE(monthly_changed,0)+1, version=version+1 WHERE id=?').run(amount, acc.id);
+  return { ok: true };
+}
+
 // ---------- 注文の検証（プレビューと受付で共用） ----------
 const jpy = (n) => n.toLocaleString('ja-JP');
 function evaluateOrder(db, acc, ds, ev, inp) {
@@ -407,4 +414,4 @@ function updatePlan(db, acc, ds, planId, inp) {
   return { ok: true };
 }
 
-module.exports = { taxOnGain, nisaCompare, NISA_ANNUAL_LIMIT, FAR, finalDate, startDate, dateAt, calcFee, reservePrice, lastPrice, lineValue, getAcc, availableCash, sellableQty, valuation, snapshot, createAccount, evaluateOrder, placeOrder, cancelOrder, advance, createPlan, updatePlan, statusJa, ymOf, dayOf, nextYm, MAX_QTY, MAX_AMOUNT };
+module.exports = { setMonthly, taxOnGain, nisaCompare, NISA_ANNUAL_LIMIT, FAR, finalDate, startDate, dateAt, calcFee, reservePrice, lastPrice, lineValue, getAcc, availableCash, sellableQty, valuation, snapshot, createAccount, evaluateOrder, placeOrder, cancelOrder, advance, createPlan, updatePlan, statusJa, ymOf, dayOf, nextYm, MAX_QTY, MAX_AMOUNT };

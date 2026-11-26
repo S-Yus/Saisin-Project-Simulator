@@ -210,7 +210,7 @@ function validateBundle(b, env) {
     for (const w of NEWS_NG) if (said.includes(w)) E(`ニュース ${n.id}: 解説・考え方の例に「${w}」は使えません（値動きの見通しや売買のすすめにあたる表現）`);
     news.push({ id: n.id, published_date: n.published_date, summary: n.summary, source_name: n.source_name, url: n.url, explain, views });
   }
-  if (news.length < 5 || news.length > 8) W(`ニュース件数が ${news.length} 件です（想定は 5〜8 件）`);
+  if (news.length < 5 || news.length > 12) W(`ニュース件数が ${news.length} 件です（想定は 5〜12 件）`);
   if (strict) for (const s of sources.values()) if (s.license_status !== 'confirmed') W(`出典 ${s.id}: 利用許諾が未確認です（確認済みになるまで固定不可）`);
   const summary = {
     kind: m.kind, version: m.version || null, period: [m.period_start, m.period_end], calendar: calendar.length ? [calendar[0], calendar[calendar.length - 1]] : null,

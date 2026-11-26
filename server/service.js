@@ -67,6 +67,7 @@ function parseFunds(ev, b) {
   return { initial_cash: ic, monthly_deposit: md };
 }
 const fundsOf = (ev, acc) => ({ initial_cash: acc.initial_cash ?? ev.initial_cash, monthly_deposit: acc.monthly_deposit ?? ev.monthly_deposit });
+const condOf = (ev, acc) => ({ ...fundsOf(ev, acc), monthly_changed: acc.monthly_changed || 0 });
 
 function join(db, code, nowMs, body) {
   const ev = db.prepare('SELECT * FROM events WHERE join_code=?').get(code);
@@ -150,7 +151,7 @@ function me(db, ctx, nowMs) {
   return {
     server_now: iso(nowMs),
     event: { name: ev.name, status: st, status_ja: STATUS_JA[st], ends_at: ev.ends_at, retention_hours: ev.retention_hours, env: cfg.ENV, data: dataInfo(db, ev), provisional: JSON.parse(ev.provisional_json), ...fundsOf(ev, acc), funds_limits: cfg.FUNDS, period: { start: E.startDate(ds, ev), end: fin }, app_version: cfg.APP_VERSION, calc_spec_version: cfg.CALC_SPEC_VERSION },
-    account: { attempt: acc.attempt, status: acc.status, sim_date: acc.sim_date, final_date: fin, version: acc.version },
+    account: { attempt: acc.attempt, monthly_changed: acc.monthly_changed || 0, status: acc.status, sim_date: acc.sim_date, final_date: fin, version: acc.version },
     assets: { ...v, holdings: v.holdings.map((h) => ({ ...h, name: nm(h.instrument_id), type: ds.instruments.get(h.instrument_id).type, category: ds.instruments.get(h.instrument_id).category, spark: sparkOf(ds, h.instrument_id, acc.sim_date) })) },
     nisa: E.nisaCompare(db, acc, v),
     allocation, series, news: news.slice(0, 20).map((n) => ({ id: n.id, published_date: n.published_date, summary: n.summary, source_name: n.source_name, url: n.url, explain: n.explain || null, views: n.views_json ? JSON.parse(n.views_json) : null })), orders, plans, receivables: recv,
@@ -207,9 +208,9 @@ function compare(db, ctx) {
     const own = E.valuation(db, a, ds);
     const fees = db.prepare("SELECT COALESCE(-SUM(amount),0) s FROM ledger WHERE account_id=? AND type='fee'").get(a.id).s;
     const trades = db.prepare("SELECT COUNT(*) c FROM orders WHERE account_id=? AND status='filled'").get(a.id).c;
-    return { attempt: a.attempt, status: a.status, sim_date: a.sim_date, conditions: fundsOf(ev, a), at_common: s, own: { total: own.total, deposits: own.deposits, pnl: own.pnl }, fees, trades, holdings: own.holdings.map((h) => ({ name: ds.instruments.get(h.instrument_id).name, value: h.value })), series: db.prepare('SELECT date,total FROM snapshots WHERE account_id=? AND date<=? ORDER BY date').all(a.id, common) };
+    return { attempt: a.attempt, status: a.status, sim_date: a.sim_date, conditions: condOf(ev, a), at_common: s, own: { total: own.total, deposits: own.deposits, pnl: own.pnl }, fees, trades, holdings: own.holdings.map((h) => ({ name: ds.instruments.get(h.instrument_id).name, value: h.value })), series: db.prepare('SELECT date,total FROM snapshots WHERE account_id=? AND date<=? ORDER BY date').all(a.id, common) };
   });
-  const same = rows.every((r) => r.conditions.initial_cash === rows[0].conditions.initial_cash && r.conditions.monthly_deposit === rows[0].conditions.monthly_deposit);
+  const same = rows.every((r) => r.conditions.initial_cash === rows[0].conditions.initial_cash && r.conditions.monthly_deposit === rows[0].conditions.monthly_deposit && !r.conditions.monthly_changed);
   return { common_date: common, rows, same_conditions: same, conditions: rows[rows.length - 1].conditions, note: same ? '同じ資金条件での比較です。結果に優劣の順位は付けません。' : '資金条件が異なる試行が含まれます（各試行の条件を表示しています）。結果に優劣の順位は付けません。' };
 }
 
@@ -243,6 +244,17 @@ function opAdvance(db, b) {
 }
 function opPlanCreate(db, b) { return mutate(db, null, b, (ctx) => { const r = E.createPlan(db, ctx.acc, ctx.ds, b); if (!r.ok) throw new HttpError(422, r.errors[0], { errors: r.errors }); return { ok: true, ...r, message: '積立を設定しました' }; }); }
 function opPlanUpdate(db, b, id) { return mutate(db, null, b, (ctx) => { const r = E.updatePlan(db, ctx.acc, ctx.ds, id, b); if (!r.ok) throw new HttpError(422, r.errors[0], { errors: r.errors }); return { ok: true, message: '積立設定を更新しました' }; }); }
+// 毎月入ってくる金額を途中で変える（次の月初の入金から）
+function opMonthly(db, b) {
+  return mutate(db, null, b, (ctx) => {
+    const L = cfg.FUNDS; const v = b.monthly_deposit;
+    if (!(Number.isSafeInteger(v) && v >= 0 && v <= L.monthly_max && v % L.step === 0)) throw new HttpError(422, `毎月の金額は 0〜${L.monthly_max.toLocaleString('ja-JP')}円、${L.step.toLocaleString('ja-JP')}円単位で指定してください`);
+    const cur = fundsOf(ctx.ev, ctx.acc).monthly_deposit;
+    if (v === cur) throw new HttpError(422, 'いまと同じ金額です');
+    const r = E.setMonthly(db, ctx.acc, v); if (!r.ok) throw new HttpError(422, r.error);
+    return { ok: true, monthly_deposit: v, message: `毎月の金額を ${v.toLocaleString('ja-JP')}円 に変えました（次の月の入金から）` };
+  });
+}
 function opRestart(db, b) {
   return mutate(db, null, b, (ctx) => {
     const n = db.prepare('SELECT COUNT(*) c FROM accounts WHERE participant_id=?').get(ctx.p.id).c;
@@ -256,4 +268,4 @@ function opRestart(db, b) {
   });
 }
 
-module.exports = { requestStatus, HttpError, sha, iso, fingerprint, purgeAt, eventStatus, STATUS_JA, publicEvent, join, auth, me, instruments, instrumentDetail, history, compare, orderPreview, opPlaceOrder, opCancel, opAdvance, opPlanCreate, opPlanUpdate, opRestart };
+module.exports = { requestStatus, HttpError, sha, iso, fingerprint, purgeAt, eventStatus, STATUS_JA, publicEvent, join, auth, me, instruments, instrumentDetail, history, compare, orderPreview, opPlaceOrder, opCancel, opAdvance, opPlanCreate, opPlanUpdate, opRestart, opMonthly };

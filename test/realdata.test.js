@@ -55,7 +55,7 @@ test('実データ: 元ファイルのハッシュ・形式・単位・期間・
   assert.equal(rows.length, 7 * 730);
   const navs = new Map(r.adopted.map((id) => [id, rawNav(id)]));
   for (const [id, d, open, close, st] of rows) { assert.equal(open, ''); assert.equal(st, 'normal'); assert.equal(Number(close), navs.get(id).get(d), `${id} ${d}`); assert.ok(d >= '2023-11-01' && d <= '2026-10-31'); }
-  assert.equal(built.bundle.news.length, 5);
+  assert.equal(built.bundle.news.length, 10);
   assert.ok(built.bundle.sources.every((s) => s.license_status === 'unconfirmed'), '許諾は未確認のまま出力される');
 });
 
@@ -219,6 +219,6 @@ test('開発・検算環境は外部から到達できる待受では起動し�
 test('実データのニュース: 5件すべてに解説と、立場の異なる2つの考え方の例がある（取込検証を通る）', { skip: !fs.existsSync(path.join(__dirname, '..', 'market-data', 'raw')) }, () => {
   const { build } = require('../scripts/build-dataset');
   const news = build().bundle.news;
-  assert.equal(news.length, 5);
+  assert.equal(news.length, 10);
   for (const n of news) { assert.ok(n.explain && n.explain.length <= 300, n.id); assert.equal(n.views.length, 2, n.id); assert.notEqual(n.views[0].label, n.views[1].label); }
 });

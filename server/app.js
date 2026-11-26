@@ -68,6 +68,7 @@ function createApp(db, opts = {}) {
       if (route === 'POST /api/plans') return S.opPlanCreate(db, body)(t, token);
       if ((mm = url.pathname.match(/^\/api\/plans\/(\d+)$/))) return S.opPlanUpdate(db, body, Number(mm[1]))(t, token);
       if (route === 'POST /api/restart') return S.opRestart(db, body)(t, token);
+      if (route === 'POST /api/monthly') return S.opMonthly(db, body)(t, token);
     }
     throw new HttpError(404, 'not found');
   }

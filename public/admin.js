@@ -95,8 +95,8 @@ function quickForm(dsl) {
   <div class="row"><div><label for="q-name">説明会の名前</label><input id="q-name" maxlength="80" value="NISA説明会 ${esc(today)}"></div>
   <div><label for="q-len">使える時間（いまから）</label><select id="q-len"><option value="2">2時間</option><option value="4">4時間</option><option value="24">1日</option><option value="168">7日</option>${who.role === 'tester' ? '' : '<option value="720">30日</option>'}</select></div>
   <div><label for="q-max">定員（人）</label><input id="q-max" type="number" min="1" max="${who.role === 'tester' ? 50 : 5000}" value="50"></div></div>
-  <div class="sub">データ: ${esc(d.name)}（${esc(d.period_start)}〜${esc(d.period_end)}）／ 参加者が金額を選ばなかったときの既定は、最初100万円・毎月3万円 ／ 参加データは終了の24時間後に自動で削除</div>
-  <div class="btns"><button class="btn pri big" id="q-go" data-ds="${esc(d.id)}" data-ss="${esc(d.period_start)}" data-se="${esc(d.period_end)}">作成してQRコードを表示</button></div><div id="q-msg"></div></div>`;
+  <div class="sub">体験する期間: ${esc(d.sim_default.start)}〜${esc(d.sim_default.end)}（データ: ${esc(d.name)}）／ 参加者が金額を選ばなかったときの既定は、最初100万円・毎月3万円 ／ 参加データは終了の24時間後に自動で削除</div>
+  <div class="btns"><button class="btn pri big" id="q-go" data-ds="${esc(d.id)}" data-ss="${esc(d.sim_default.start)}" data-se="${esc(d.sim_default.end)}">作成してQRコードを表示</button></div><div id="q-msg"></div></div>`;
 }
 function createForm(dsl) {
   const locked = dsl.filter((d) => d.status === 'locked');

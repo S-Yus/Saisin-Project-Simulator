@@ -334,3 +334,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .nisab tr.sum th,.nisab tr.sum td{border-top:1px solid var(--ink)}
 .alloc .bar{border-radius:3px;overflow:hidden}
 @media (max-height:700px){svg.chart{height:84px}}
+
+/* 0.11.0: えらぶの「買う／売る」、ダイアログを開いたときに本文へ焦点（リンクが選ばれた表示にしない） */
+#dlgbody:focus{outline:none}
+.seg.mseg{margin:12px 0 0}.seg.mseg button{min-height:44px;padding:8px 6px}
