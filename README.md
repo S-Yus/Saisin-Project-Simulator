@@ -37,12 +37,25 @@ npm test                                   # 48件
 node scripts/loadtest.js 300 60 session    # ファイルDB・別プロセスで負荷確認（fullrun で最悪ケース）
 ```
 
+## 構成の見取り図
+全体の配置・モジュール・画面とAPI・要求の流れ・データ構造・状態遷移・データの取込・認証の図は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（技術者向け）。
+
+```mermaid
+flowchart LR
+  P["参加者のスマートフォン"] -- HTTPS --> CF["Cloudflare"]
+  A["管理者のパソコン"] -- HTTPS --> CF
+  CF -- トンネル --> T["cloudflared（VPS）"]
+  T -- "HTTP 127.0.0.1" --> N["Node.js 単一プロセス"]
+  N --> D[("SQLite")]
+```
+
 ## 文書
 | 文書 | 内容 |
 |---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 設計図（技術者向け。構成・モジュール・API・データ構造・状態遷移を図で） |
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | 要件定義（目的・利用者・確定/未確定事項・対象外・受入条件・完成の段階） |
 | [docs/DESIGN.md](docs/DESIGN.md) | 基本設計（構成・画面・遷移・権限・開始から削除までの流れ）とデータ設計（テーブル・制約・保存期間） |
-| [docs/SPEC.md](docs/SPEC.md) | 詳細設計（注文の状態遷移・日次処理の順序・資産評価・積立・配当/分割・日付・端数・冪等。計算仕様版 1.2） |
+| [docs/SPEC.md](docs/SPEC.md) | 詳細設計（注文の状態遷移・日次処理の順序・資産評価・積立・配当/分割・日付・端数・冪等。計算仕様版 1.5） |
 | [docs/API.md](docs/API.md) | API仕様（認証・リクエスト・レスポンス・エラー・冪等キー・期限/権限/未来情報の制約） |
 | [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) | データ出典台帳（取得元・取得日時・期間・項目・単位・許諾状態・ハッシュ・検証結果・取引条件の根拠） |
 | [docs/DATA_INPUT.md](docs/DATA_INPUT.md) | 取込ファイルの入力仕様と取込手順 |
